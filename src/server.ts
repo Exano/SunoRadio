@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
 const app = express();
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || "3001", 10);
 
 const SUNO_API = "https://studio-api.prod.suno.com/api/playlist";
 const SOURCE_PLAYLISTS = [
