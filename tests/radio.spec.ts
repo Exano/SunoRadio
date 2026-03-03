@@ -347,9 +347,10 @@ test.describe("SunoTime Radio", () => {
     const gainVal = await page.evaluate(
       () => (window as any).masterGain?.gain?.value ?? -1
     );
+    // Gain uses quadratic curve: 0.3^2 = 0.09
     console.log(`  Volume after reload: slider=${sliderVal}, gain=${gainVal}`);
-    expect(gainVal).toBeGreaterThan(0.1);
-    expect(gainVal).toBeLessThan(0.5);
+    expect(gainVal).toBeGreaterThan(0.05);
+    expect(gainVal).toBeLessThan(0.15);
   });
 
   test("mute does not persist to localStorage", async ({ page }) => {

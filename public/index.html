@@ -344,6 +344,10 @@
     function saveVolume(val) {
       try { localStorage.setItem("sunotime-volume", String(val)); } catch (e) {}
     }
+    // Attempt perceptual loudness: x^2 curve so low-end has more control
+    function volumeCurve(val) {
+      return val * val;
+    }
 
     // ---- User Color Persistence ----
     function getUserColor() {
@@ -385,7 +389,7 @@
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
       masterGain = audioCtx.createGain();
-      masterGain.gain.value = getSavedVolume();
+      masterGain.gain.value = volumeCurve(getSavedVolume());
       masterGain.connect(audioCtx.destination);
 
       // Create channel pool — each with its own Audio element + gain node
@@ -623,13 +627,13 @@
           <button class="vol-icon" id="vol-btn">
             <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
           </button>
-          <input type="range" class="volume-slider" id="vol-slider" min="0" max="1" step="0.01" value="${masterGain ? masterGain.gain.value : getSavedVolume()}">
+          <input type="range" class="volume-slider" id="vol-slider" min="0" max="1" step="0.01" value="${getSavedVolume()}">
         </div>
       `;
 
       document.getElementById("vol-slider").addEventListener("input", e => {
         const val = parseFloat(e.target.value);
-        if (masterGain) masterGain.gain.setTargetAtTime(val, audioCtx.currentTime, 0.02);
+        if (masterGain) masterGain.gain.setTargetAtTime(volumeCurve(val), audioCtx.currentTime, 0.02);
         saveVolume(val);
       });
 
@@ -642,7 +646,7 @@
         } else {
           // Unmute — restore saved volume
           const restored = getSavedVolume();
-          masterGain.gain.setTargetAtTime(restored, audioCtx.currentTime, 0.02);
+          masterGain.gain.setTargetAtTime(volumeCurve(restored), audioCtx.currentTime, 0.02);
           slider.value = restored;
         }
       });
