@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SunoTime Radio</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* --- Tuner Panel --- */
+    .tuner-panel {
+      background: #0d0d14;
+      border-bottom: 1px solid #1a1a25;
+      padding: 16px 20px 12px;
+      user-select: none;
+    }
+
+    .tuner-freq-display {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .tuner-freq-num {
+      font-size: 48px;
+      font-weight: 800;
+      color: #ff4f00;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .tuner-freq-unit {
+      font-size: 18px;
+      font-weight: 400;
+      color: #ff4f00;
+      opacity: 0.6;
+      margin-left: 4px;
+    }
+
+    .tuner-station-name {
+      font-size: 13px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 4px;
+      height: 18px;
+      text-align: center;
+      transition: opacity 0.3s;
+    }
+
+    .tuner-station-name.hidden { opacity: 0; }
+
+    /* --- Dial Band --- */
+    .dial-band-wrapper {
+      position: relative;
+      height: 56px;
+      margin: 0 -20px;
+    }
+
+    .dial-canvas {
+      display: block;
+      width: 100%;
+      height: 56px;
+    }
+
+    .tuner-needle {
+      position: absolute;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: #ff4f00;
+      box-shadow: 0 0 8px rgba(255, 79, 0, 0.6);
+      pointer-events: none;
+      z-index: 5;
+      transform: translateX(-1px);
+      transition: left 0.05s linear;
+    }
+
+    /* Invisible slider overlays the dial for input */
+    #tuner-range {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      outline: none;
+      cursor: grab;
+      z-index: 10;
+      margin: 0;
+      opacity: 0;
+    }
+
+    /* --- Main Display --- */
+    .radio-display {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+      position: relative;
+      min-height: 0;
+      transition: opacity 0.3s;
+    }
+
+    .album-art {
+      width: 240px;
+      height: 240px;
+      border-radius: 10px;
+      object-fit: cover;
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+      margin-bottom: 24px;
+      background: #1a1a24;
+    }
+
+    .song-title {
+      font-size: 20px;
+      font-weight: 700;
+      text-align: center;
+      max-width: 480px;
+      line-height: 1.3;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      width: 100%;
+    }
+
+    .song-artist {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 16px;
+    }
+
+    /* --- Volume --- */
+    .volume-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .vol-icon {
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: color 0.2s;
+    }
+    .vol-icon:hover { color: #fff; }
+    .vol-icon svg { width: 20px; height: 20px; fill: currentColor; }
+
+    .volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 80px;
+      height: 3px;
+      background: #222;
+      border-radius: 2px;
+      outline: none;
+    }
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #ff4f00;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    /* --- ON AIR --- */
+    .on-air {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #ff4f00;
+    }
+    .on-air-dot {
+      width: 7px;
+      height: 7px;
+      background: #ff4f00;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* --- Station badge --- */
+    .station-badge {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      font-size: 11px;
+      color: #444;
+      font-weight: 600;
+    }
+    .station-badge span { color: #ff4f00; }
+
+    /* --- States --- */
+    .tuning {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+    }
+    .tuning-text {
+      color: #555;
+      font-size: 13px;
+      letter-spacing: 1px;
+    }
+    .tuning-spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #222;
+      border-top-color: #ff4f00;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-top: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .between-stations {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 8px;
+    }
+    .between-stations-text {
+      color: #333;
+      font-size: 14px;
+      letter-spacing: 0.5px;
+    }
+
+    .pick-station {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 8px;
+    }
+    .pick-station-icon {
+      font-size: 40px;
+      margin-bottom: 8px;
+      opacity: 0.3;
+    }
+    .pick-station-text {
+      color: #555;
+      font-size: 15px;
+      letter-spacing: 0.5px;
+    }
+    .pick-station-sub {
+      color: #333;
+      font-size: 12px;
+    }
+
+    .empty-msg {
+      color: #444;
+      font-size: 13px;
+      text-align: center;
+      padding: 40px;
+    }
+
+    /* --- Signal meter --- */
+    .signal-meter {
+      text-align: center;
+      font-size: 10px;
+      color: #333;
+      letter-spacing: 1px;
+      height: 14px;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Tuner Panel -->
+  <div class="tuner-panel" id="tuner-panel">
+    <div class="tuner-freq-display">
+      <span class="tuner-freq-num" id="tuner-freq-num">98.1</span><span class="tuner-freq-unit">FM</span>
+      <div class="tuner-station-name hidden" id="tuner-station-name"></div>
+    </div>
+    <div class="dial-band-wrapper" id="dial-band-wrapper">
+      <canvas class="dial-canvas" id="dial-canvas"></canvas>
+      <div class="tuner-needle" id="tuner-needle"></div>
+      <input type="range" id="tuner-range" min="881" max="1079" step="2" value="981">
+    </div>
+    <div class="signal-meter" id="signal-meter"></div>
+  </div>
+
+  <div class="radio-display" id="display">
+    <div class="pick-station">
+      <div class="pick-station-icon">&#9685;</div>
+      <div class="pick-station-text">Tune the dial to find a station</div>
+      <div class="pick-station-sub">Drag the slider or use arrow keys</div>
+    </div>
+  </div>
+
+  <script>
+    // ---- Constants ----
+    const RECEPTION_RANGE = 0.5;  // MHz — how far from center a station is audible
+    const DISPLAY_RANGE = 0.2;    // MHz — show station info within this distance
+    const POOL_SIZE = 4;          // Max simultaneous audio channels
+    const FREQ_MIN = 88.1;
+    const FREQ_MAX = 107.9;
+    const FREQ_SPAN = FREQ_MAX - FREQ_MIN;  // 19.8
+
+    const PLACEHOLDER = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%231a1a24%22 width=%221%22 height=%221%22/></svg>";
+
+    // ---- Volume Persistence ----
+    function getSavedVolume() {
+      try {
+        const v = parseFloat(localStorage.getItem("sunotime-volume"));
+        if (!isNaN(v) && v >= 0 && v <= 1) return v;
+      } catch (e) {}
+      return 0.7;
+    }
+    function saveVolume(val) {
+      try { localStorage.setItem("sunotime-volume", String(val)); } catch (e) {}
+    }
+
+    // ---- User Color Persistence ----
+    function getUserColor() {
+      try {
+        var c = localStorage.getItem("sunotime-user-color");
+        if (c) return c;
+      } catch (e) {}
+      // Generate random bright HSL color
+      var hue = Math.floor(Math.random() * 360);
+      var color = "hsl(" + hue + ", 90%, 60%)";
+      try { localStorage.setItem("sunotime-user-color", color); } catch (e) {}
+      return color;
+    }
+    var userColor = getUserColor();
+
+    // ---- State ----
+    // var (not let) so tests can access via window.*
+    var stations = [];
+    var stationData = {};        // freq → { songs, ... }
+    var currentFreq = 98.1;
+    var displayedStationFreq = null;
+    var displayedSongId = null;
+    var started = false;         // Has user interacted yet?
+    var preloadedImages = {};    // url → Image, prevents GC + deduplicates
+
+    // ---- Presence State ----
+    var otherUsers = {};         // id → { freq, color }
+    var wsConn = null;
+    var myUserId = null;
+    var dialRedrawScheduled = false;
+
+    // ---- Web Audio Engine ----
+    var audioCtx = null;
+    var masterGain = null;
+    var channelPool = [];        // { audio, source, gainNode, stationFreq, songs, songIndex }
+
+    function initAudioEngine() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = getSavedVolume();
+      masterGain.connect(audioCtx.destination);
+
+      // Create channel pool — each with its own Audio element + gain node
+      for (let i = 0; i < POOL_SIZE; i++) {
+        const audio = new Audio();
+        audio.crossOrigin = "anonymous";
+        audio.volume = 1.0;
+
+        const source = audioCtx.createMediaElementSource(audio);
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0;
+        source.connect(gainNode);
+        gainNode.connect(masterGain);
+
+        const ch = {
+          audio,
+          source,
+          gainNode,
+          stationFreq: null,
+          songs: null,
+          songIndex: -1,
+        };
+
+        // When a song ends, advance to next in that channel's playlist
+        audio.addEventListener("ended", () => {
+          if (!ch.stationFreq || !ch.songs) return;
+          const len = ch.songs.length;
+          const next = (ch.songIndex + 1) % len;
+          ch.songIndex = next;
+          const song = ch.songs[next];
+          ch.audio.src = song.audioUrl;
+          ch.audio.play().catch(() => {});
+          // Preload the song after next so its art is ready
+          preloadImage(ch.songs[(next + 1) % len].imageUrl);
+          updateDisplayIfNeeded();
+        });
+
+        channelPool.push(ch);
+      }
+    }
+
+    function ensureAudio() {
+      if (!audioCtx) initAudioEngine();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      if (!started) {
+        started = true;
+        updateChannels();
+      }
+    }
+
+    // ---- UTC Schedule ----
+    function getSchedule(songs) {
+      const totalDuration = songs.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+      if (!totalDuration || isNaN(totalDuration)) return { index: 0, elapsed: 0 };
+      const offset = (Date.now() / 1000) % totalDuration;
+
+      let cumulative = 0;
+      for (let i = 0; i < songs.length; i++) {
+        if (cumulative + songs[i].duration > offset) {
+          return { index: i, elapsed: offset - cumulative };
+        }
+        cumulative += songs[i].duration;
+      }
+      return { index: 0, elapsed: 0 };
+    }
+
+    // ---- Channel Management ----
+    // On every frequency change, figure out which stations are in range,
+    // assign audio channels to them, and set gains via cosine crossfade.
+
+    function updateChannels() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+
+      // 1. Find all stations within reception range that have data
+      const inRange = [];
+      for (const s of stations) {
+        const dist = Math.abs(currentFreq - parseFloat(s.freq));
+        if (dist < RECEPTION_RANGE) {
+          const data = stationData[s.freq];
+          if (data?.songs?.length > 0) {
+            inRange.push({ station: s, dist, data });
+          }
+        }
+      }
+
+      const inRangeFreqs = new Set(inRange.map(r => r.station.freq));
+
+      // 2. Release channels whose stations went out of range
+      for (const ch of channelPool) {
+        if (ch.stationFreq && !inRangeFreqs.has(ch.stationFreq)) {
+          ch.gainNode.gain.setTargetAtTime(0, now, 0.015);
+          ch.audio.pause();
+          ch.stationFreq = null;
+          ch.songs = null;
+          ch.songIndex = -1;
+        }
+      }
+
+      // 3. For each in-range station, ensure it has a channel & update gain
+      for (const { station, dist, data } of inRange) {
+        let ch = channelPool.find(c => c.stationFreq === station.freq);
+
+        if (!ch) {
+          // Assign a free channel
+          ch = channelPool.find(c => c.stationFreq === null);
+          if (!ch) continue; // Pool exhausted
+
+          const { index, elapsed } = getSchedule(data.songs);
+          ch.stationFreq = station.freq;
+          ch.songs = data.songs;
+          ch.songIndex = index;
+
+          const song = data.songs[index];
+          const seekTarget = elapsed;
+          const assignedFreq = station.freq;
+
+          ch.audio.src = song.audioUrl;
+
+          let didPlay = false;
+          if (seekTarget > 0.5) {
+            // Wait for metadata → seek → wait for seek to finish → play.
+            // CRITICAL: register "seeked" INSIDE "loadedmetadata" AFTER
+            // setting currentTime, so we catch OUR seek, not the browser's
+            // initial-load seek-to-0.
+            ch.audio.addEventListener("loadedmetadata", () => {
+              if (didPlay || ch.stationFreq !== assignedFreq) return;
+              ch.audio.currentTime = seekTarget;
+              ch.audio.addEventListener("seeked", () => {
+                if (didPlay || ch.stationFreq !== assignedFreq) return;
+                didPlay = true;
+                ch.audio.play().catch(() => {});
+              }, { once: true });
+            }, { once: true });
+            // Fallback: if seeked never fires (non-seekable source), play after 4s
+            setTimeout(() => {
+              if (didPlay || ch.stationFreq !== assignedFreq) return;
+              didPlay = true;
+              ch.audio.play().catch(() => {});
+            }, 4000);
+          } else {
+            // Near the start of the song, just play from 0
+            ch.audio.addEventListener("canplay", () => {
+              if (didPlay || ch.stationFreq !== assignedFreq) return;
+              didPlay = true;
+              ch.audio.play().catch(() => {});
+            }, { once: true });
+          }
+        }
+
+        // Cosine crossfade gain based on distance
+        const t = dist / RECEPTION_RANGE;
+        const gain = Math.cos(t * Math.PI / 2);
+        ch.gainNode.gain.setTargetAtTime(gain, now, 0.02);
+      }
+
+      // 4. If nothing in range, all channels are silent (already handled by release)
+    }
+
+    // ---- Display ----
+
+    function updateDisplayIfNeeded() {
+      // Find nearest station within display range
+      let nearest = null;
+      let minDist = Infinity;
+      for (const s of stations) {
+        const d = Math.abs(currentFreq - parseFloat(s.freq));
+        if (d < minDist) { minDist = d; nearest = s; }
+      }
+
+      const stationNameEl = document.getElementById("tuner-station-name");
+
+      if (nearest && minDist < DISPLAY_RANGE) {
+        stationNameEl.textContent = nearest.name;
+        stationNameEl.classList.remove("hidden");
+
+        // Find the channel playing this station
+        const ch = channelPool.find(c => c.stationFreq === nearest.freq);
+        const song = ch?.songs?.[ch.songIndex];
+        const songId = song?.id;
+
+        if (song && (nearest.freq !== displayedStationFreq || songId !== displayedSongId)) {
+          displayedStationFreq = nearest.freq;
+          displayedSongId = songId;
+          renderNowPlaying(song, nearest);
+        }
+
+        // Opacity tracks signal strength
+        const t = minDist / DISPLAY_RANGE;
+        const opacity = Math.cos(t * Math.PI / 2);
+        document.getElementById("display").style.opacity = Math.max(0.15, opacity);
+      } else {
+        stationNameEl.classList.add("hidden");
+
+        if (displayedStationFreq !== null) {
+          displayedStationFreq = null;
+          displayedSongId = null;
+          renderBetweenStations();
+        }
+        document.getElementById("display").style.opacity = 1;
+      }
+
+      // Signal meter
+      updateSignalMeter(nearest, minDist);
+    }
+
+    function updateSignalMeter(nearest, dist) {
+      const el = document.getElementById("signal-meter");
+      if (!started) { el.textContent = ""; return; }
+
+      if (dist < 0.05) {
+        el.textContent = "";
+      } else if (dist < DISPLAY_RANGE) {
+        const bars = Math.max(1, Math.round((1 - dist / DISPLAY_RANGE) * 5));
+        el.textContent = "\u2581\u2582\u2583\u2585\u2587".slice(0, bars);
+        el.style.color = "#555";
+      } else if (dist < RECEPTION_RANGE) {
+        el.textContent = "\u2581";
+        el.style.color = "#333";
+      } else {
+        el.textContent = "";
+      }
+    }
+
+    function renderNowPlaying(song, station) {
+      const display = document.getElementById("display");
+
+      display.innerHTML = `
+        <div class="station-badge"><span>${station.freq}</span> FM - ${station.name}</div>
+        <div class="on-air"><span class="on-air-dot"></span>ON AIR</div>
+        <img class="album-art" src="${song.imageUrl}" alt="" onerror="this.src='${PLACEHOLDER}'">
+        <div class="song-title" data-testid="song-title">${esc(song.title)}</div>
+        <div class="song-artist" data-testid="song-artist">${esc(song.artist)}</div>
+        <div class="volume-controls">
+          <button class="vol-icon" id="vol-btn">
+            <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+          </button>
+          <input type="range" class="volume-slider" id="vol-slider" min="0" max="1" step="0.01" value="${masterGain ? masterGain.gain.value : getSavedVolume()}">
+        </div>
+      `;
+
+      document.getElementById("vol-slider").addEventListener("input", e => {
+        const val = parseFloat(e.target.value);
+        if (masterGain) masterGain.gain.setTargetAtTime(val, audioCtx.currentTime, 0.02);
+        saveVolume(val);
+      });
+
+      document.getElementById("vol-btn").addEventListener("click", () => {
+        const slider = document.getElementById("vol-slider");
+        if (masterGain.gain.value > 0.01) {
+          // Mute — don't save 0 so reload doesn't start muted
+          masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+          slider.value = 0;
+        } else {
+          // Unmute — restore saved volume
+          const restored = getSavedVolume();
+          masterGain.gain.setTargetAtTime(restored, audioCtx.currentTime, 0.02);
+          slider.value = restored;
+        }
+      });
+    }
+
+    function renderBetweenStations() {
+      document.getElementById("display").innerHTML = `
+        <div class="between-stations">
+          <div class="between-stations-text">Between stations</div>
+        </div>
+      `;
+    }
+
+    function renderLoading() {
+      document.getElementById("display").innerHTML = `
+        <div class="tuning">
+          <div class="tuning-text">LOADING STATIONS</div>
+          <div class="tuning-spinner"></div>
+        </div>
+      `;
+    }
+
+    // ---- Frequency Change ----
+
+    function onFrequencyChange(newFreq) {
+      currentFreq = newFreq;
+
+      document.getElementById("tuner-freq-num").textContent = newFreq.toFixed(1);
+      updateNeedlePosition();
+
+      if (started) {
+        updateChannels();
+      }
+      updateDisplayIfNeeded();
+      sendTuneMessage(newFreq);
+    }
+
+    // ---- WebSocket Presence ----
+
+    var lastTuneSent = 0;
+    function sendTuneMessage(freq) {
+      var now = Date.now();
+      if (now - lastTuneSent < 100) return; // max 10/sec
+      lastTuneSent = now;
+      if (wsConn && wsConn.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({ type: "tune", freq: freq }));
+      }
+    }
+
+    function scheduleDialRedraw() {
+      if (dialRedrawScheduled) return;
+      dialRedrawScheduled = true;
+      requestAnimationFrame(function() {
+        dialRedrawScheduled = false;
+        drawDial();
+      });
+    }
+
+    function connectWebSocket() {
+      var proto = location.protocol === "https:" ? "wss:" : "ws:";
+      var url = proto + "//" + location.host;
+      var ws = new WebSocket(url);
+
+      ws.onopen = function() {
+        wsConn = ws;
+        ws.send(JSON.stringify({ type: "hello", color: userColor, freq: currentFreq }));
+      };
+
+      ws.onmessage = function(event) {
+        var msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+
+        if (msg.type === "welcome") {
+          myUserId = msg.id;
+          otherUsers = {};
+          for (var i = 0; i < msg.users.length; i++) {
+            var u = msg.users[i];
+            otherUsers[u.id] = { freq: u.freq, color: u.color };
+          }
+          scheduleDialRedraw();
+        } else if (msg.type === "user") {
+          otherUsers[msg.id] = { freq: msg.freq, color: msg.color };
+          scheduleDialRedraw();
+        } else if (msg.type === "leave") {
+          delete otherUsers[msg.id];
+          scheduleDialRedraw();
+        }
+      };
+
+      ws.onclose = function() {
+        wsConn = null;
+        otherUsers = {};
+        scheduleDialRedraw();
+        // Auto-reconnect after 3s
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onerror = function() {
+        ws.close();
+      };
+    }
+
+    // ---- Dial Rendering ----
+
+    function drawDial() {
+      const wrapper = document.getElementById("dial-band-wrapper");
+      const canvas = document.getElementById("dial-canvas");
+      const width = wrapper.offsetWidth;
+      const pxPerMHz = width / FREQ_SPAN;
+      const dpr = window.devicePixelRatio || 1;
+
+      canvas.width = width * dpr;
+      canvas.height = 56 * dpr;
+      canvas.style.width = width + "px";
+
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      // Tick marks
+      for (let f = 88; f <= 108; f++) {
+        const x = (f - FREQ_MIN) * pxPerMHz;
+
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 36);
+        ctx.lineTo(x, 56);
+        ctx.stroke();
+
+        ctx.fillStyle = "#444";
+        ctx.font = "10px -apple-system, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(f.toString(), x, 32);
+
+        for (let m = 0.2; m < 1; m += 0.2) {
+          if (f + m > FREQ_MAX) break;
+          const mx = (f + m - FREQ_MIN) * pxPerMHz;
+          ctx.strokeStyle = "#222";
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(mx, 44);
+          ctx.lineTo(mx, 56);
+          ctx.stroke();
+        }
+      }
+
+      // Station markers
+      for (const s of stations) {
+        const sf = parseFloat(s.freq);
+        const x = (sf - FREQ_MIN) * pxPerMHz;
+
+        ctx.fillStyle = "#ff4f00";
+        ctx.beginPath();
+        ctx.arc(x, 14, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#555";
+        ctx.font = "8px -apple-system, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(s.name, x, 8);
+      }
+
+      // Other users' presence markers
+      var height = 56;
+      for (var uid in otherUsers) {
+        var u = otherUsers[uid];
+        var ux = (u.freq - FREQ_MIN) * pxPerMHz;
+        if (ux < 0 || ux > width) continue;
+
+        // Translucent colored line
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = u.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ux, 0);
+        ctx.lineTo(ux, height);
+        ctx.stroke();
+
+        // Small dot at top
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = u.color;
+        ctx.beginPath();
+        ctx.arc(ux, 4, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function updateNeedlePosition() {
+      const wrapper = document.getElementById("dial-band-wrapper");
+      const needle = document.getElementById("tuner-needle");
+      const width = wrapper.offsetWidth;
+      const x = ((currentFreq - FREQ_MIN) / FREQ_SPAN) * width;
+      needle.style.left = x + "px";
+    }
+
+    // ---- Input Handling ----
+
+    function setupTunerInput() {
+      const slider = document.getElementById("tuner-range");
+
+      slider.addEventListener("input", () => {
+        ensureAudio();
+        const freq = parseInt(slider.value, 10) / 10;
+        onFrequencyChange(freq);
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.target.tagName === "INPUT" && e.target.id !== "tuner-range") return;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          ensureAudio();
+          const step = e.key === "ArrowRight" ? 0.2 : -0.2;
+          let newVal = currentFreq + step;
+          newVal = Math.max(88.1, Math.min(107.9, newVal));
+          newVal = Math.round(newVal * 10) / 10;
+          if (Math.round(newVal * 10) % 2 === 0) {
+            newVal += (step > 0 ? 0.1 : -0.1);
+          }
+          newVal = Math.max(88.1, Math.min(107.9, newVal));
+          slider.value = Math.round(newVal * 10);
+          onFrequencyChange(newVal);
+        }
+      });
+    }
+
+    // ---- Helpers ----
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // ---- Pre-fetch all station data ----
+    async function prefetchAllStations() {
+      await Promise.all(stations.map(async (s) => {
+        try {
+          const res = await fetch(`/api/station/${s.freq}`);
+          stationData[s.freq] = await res.json();
+        } catch (e) {}
+      }));
+      console.log(`Pre-fetched data for ${Object.keys(stationData).length} stations`);
+    }
+
+    // ---- Album art preloading ----
+    // For every station, compute the UTC-scheduled current song and preload
+    // its image plus previous and next songs' images into the browser cache.
+
+    function preloadImage(url) {
+      if (!url || preloadedImages[url]) return;
+      const img = new Image();
+      img.src = url;
+      preloadedImages[url] = img;
+    }
+
+    function preloadAlbumArt() {
+      for (const s of stations) {
+        const data = stationData[s.freq];
+        if (!data?.songs?.length) continue;
+
+        const songs = data.songs;
+        const { index } = getSchedule(songs);
+        const len = songs.length;
+
+        // Previous, current, next
+        const prev = (index - 1 + len) % len;
+        const next = (index + 1) % len;
+
+        preloadImage(songs[prev].imageUrl);
+        preloadImage(songs[index].imageUrl);
+        preloadImage(songs[next].imageUrl);
+      }
+    }
+
+    // ---- Boot ----
+
+    async function init() {
+      renderLoading();
+      const res = await fetch("/api/stations");
+      stations = await res.json();
+      drawDial();
+      updateNeedlePosition();
+      setupTunerInput();
+
+      // Show initial prompt
+      document.getElementById("display").innerHTML = `
+        <div class="pick-station">
+          <div class="pick-station-icon">&#9685;</div>
+          <div class="pick-station-text">Tune the dial to find a station</div>
+          <div class="pick-station-sub">Drag the slider or use arrow keys</div>
+        </div>
+      `;
+
+      // Pre-fetch all station data, then preload album art for current schedule
+      prefetchAllStations().then(() => {
+        preloadAlbumArt();
+        // Re-preload every 30s as songs rotate through the schedule
+        setInterval(preloadAlbumArt, 30_000);
+      });
+
+      window.addEventListener("resize", () => {
+        drawDial();
+        updateNeedlePosition();
+      });
+
+      // Connect WebSocket for multi-user presence
+      connectWebSocket();
+    }
+
+    init();
+  </script>
+</body>
+</html>
