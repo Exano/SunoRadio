@@ -29,7 +29,7 @@
       filter: blur(40px);
       opacity: 0;
       transform: scale(1.2);
-      transition: opacity 0.15s ease;
+      transition: opacity 0.4s ease;
       z-index: 0;
       pointer-events: none;
     }
@@ -181,10 +181,21 @@
       transition: opacity 0.3s;
     }
 
+    #bg-shader {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      display: none;
+      pointer-events: none;
+    }
+
     #visualizer {
       display: block;
       width: 100%;
       height: 100%;
+      position: relative;
+      z-index: 1;
     }
 
     /* Overlay states centered on visualizer */
@@ -472,7 +483,9 @@
       flex-direction: column;
       gap: 6px;
       font-size: 11px;
-      max-width: 200px;
+      max-width: 320px;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
       backdrop-filter: blur(8px);
     }
     .dev-menu.visible { display: flex; }
@@ -517,12 +530,49 @@
       gap: 4px;
     }
     .dev-menu-row button { flex: 1; }
+    .dev-param-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #999;
+      padding: 2px 0;
+    }
+    .dev-param-row label {
+      min-width: 56px;
+      text-transform: capitalize;
+    }
+    .dev-param-row input[type="range"] {
+      flex: 1;
+      height: 4px;
+      accent-color: #ff4f00;
+      cursor: pointer;
+    }
+    .dev-param-row .dev-param-val {
+      min-width: 32px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #ff4f00;
+    }
+    .dev-param-track {
+      flex-shrink: 0;
+      font-size: 9px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .dev-param-track input[type="checkbox"] {
+      accent-color: #ff4f00;
+    }
   </style>
 </head>
 <body>
 
   <!-- Blurred background album art -->
   <div id="bg-art"></div>
+  <!-- Background shader (full-viewport, behind everything) -->
+  <canvas id="bg-shader"></canvas>
 
   <!-- Compact top bar -->
   <div class="top-bar">
@@ -628,6 +678,38 @@
       <button data-fx="nextchannel">Next</button>
     </div>
     <button data-fx="reset">Reset</button>
+    <div class="dev-menu-section">Background</div>
+    <div class="dev-menu-row">
+      <button data-shader="none">None</button>
+      <button data-shader="sunset" class="active-fx">Sunset</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="plasma">Plasma</button>
+      <button data-shader="fractal">Fractal</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="aurora">Aurora</button>
+      <button data-shader="ocean">Ocean</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="winamp">Winamp</button>
+      <button data-shader="gradient">Gradient</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="chromatic">Chromatic</button>
+      <button data-shader="warp">Warp</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="lava">Lava</button>
+      <button data-shader="clouds">Clouds</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-shader="kaleidoscope">Kaleid.</button>
+      <button data-shader="voronoi">Voronoi</button>
+    </div>
+    <div id="dev-shader-params"></div>
+    <div class="dev-menu-section" id="dev-params-title">Parameters</div>
+    <div id="dev-params"></div>
   </div>
 
   <script>
@@ -689,8 +771,29 @@
       rain: false,            // flip bar direction (top-down)
       hueOffset: 0,           // for disco rotation (incremented per frame)
       timer: null,            // setTimeout id for auto-expire
-      mode: 'bars'            // 'bars' | 'scope' | 'circle' | 'blocks'
+      mode: 'bars',           // 'bars' | 'scope' | 'circle' | 'blocks'
+      params: {
+        bars:   { gap: 1.5, height: 0.92, peakHold: 18, peakGravity: 0.0012, shadowBlur: 12, peakHeight: 2, minWidth: 2 },
+        scope:  { lineWidth: 2.5, amplitude: 0.8, shadowBlur: 15 },
+        circle: { innerRadius: 0.15, spikeLength: 0.3, shadowBlur: 10, minLineW: 1.5, peakDot: 0.6 },
+        blocks: { cols: 16, rows: 12, gapX: 2, gapY: 2, emptyAlpha: 0.03 }
+      }
     };
+
+    var DEFAULT_SHADER = 'sunset';
+    var webgl2Available = false;
+
+    function initShaderSystem() {
+      try {
+        var testCanvas = document.createElement('canvas');
+        var testGl = testCanvas.getContext('webgl2');
+        if (testGl) {
+          webgl2Available = true;
+          testGl.getExtension('WEBGL_lose_context').loseContext();
+        }
+      } catch (e) {}
+      loadAudioReactivity();
+    }
 
     var overlayEffects = [];  // active overlay animations
 
@@ -919,6 +1022,7 @@
     var wsConn = null;
     var myUserId = null;
     var dialRedrawScheduled = false;
+    var userHue = parseInt(userColor.match(/hsl\((\d+)/)[1], 10);
 
     // ---- Web Audio Engine ----
     var audioCtx = null;
@@ -937,8 +1041,10 @@
       analyserNode.fftSize = 256;
       analyserNode.smoothingTimeConstant = 0.8;
 
-      masterGain.connect(analyserNode);
-      analyserNode.connect(audioCtx.destination);
+      // Analyser taps signal before master volume so visualizer
+      // reflects the track levels, not the user's volume setting.
+      analyserNode.connect(masterGain);
+      masterGain.connect(audioCtx.destination);
 
       // Create channel pool — each with its own Audio element + gain node
       for (let i = 0; i < POOL_SIZE; i++) {
@@ -950,7 +1056,7 @@
         const gainNode = audioCtx.createGain();
         gainNode.gain.value = 0;
         source.connect(gainNode);
-        gainNode.connect(masterGain);
+        gainNode.connect(analyserNode);
 
         const ch = {
           audio,
@@ -1013,10 +1119,25 @@
       const now = audioCtx.currentTime;
 
       // 1. Find all stations within reception range that have data
+      //    Reception range is dynamic: based on gap to the adjacent station
+      //    on the side the tuner is approaching from.
       const inRange = [];
-      for (const s of stations) {
-        const dist = Math.abs(currentFreq - parseFloat(s.freq));
-        if (dist < RECEPTION_RANGE) {
+      for (let i = 0; i < stations.length; i++) {
+        const s = stations[i];
+        const sFreq = parseFloat(s.freq);
+        const dist = Math.abs(currentFreq - sFreq);
+        // Determine the gap to the neighbor on the side the tuner is on
+        let gap = RECEPTION_RANGE;
+        if (currentFreq < sFreq && i > 0) {
+          gap = sFreq - parseFloat(stations[i - 1].freq);
+        } else if (currentFreq > sFreq && i < stations.length - 1) {
+          gap = parseFloat(stations[i + 1].freq) - sFreq;
+        } else if (i > 0) {
+          gap = sFreq - parseFloat(stations[i - 1].freq);
+        } else if (i < stations.length - 1) {
+          gap = parseFloat(stations[i + 1].freq) - sFreq;
+        }
+        if (dist < gap) {
           const data = stationData[s.freq];
           if (data?.songs?.length > 0) {
             inRange.push({ station: s, dist, data });
@@ -1088,8 +1209,26 @@
           }
         }
 
-        // Cosine crossfade gain based on distance
-        const t = dist / RECEPTION_RANGE;
+        // Cosine crossfade gain based on distance to nearest neighbor
+        // Use the gap to the adjacent station on the side the tuner is on,
+        // so when tuned directly to a station, neighbors are at gain 0.
+        const stationFreqNum = parseFloat(station.freq);
+        const stationIdx = stations.indexOf(station);
+        let gap = RECEPTION_RANGE; // fallback for edge stations
+        if (dist > 0) {
+          if (currentFreq < stationFreqNum && stationIdx > 0) {
+            // Tuner is to the left — use gap to left neighbor
+            gap = stationFreqNum - parseFloat(stations[stationIdx - 1].freq);
+          } else if (currentFreq > stationFreqNum && stationIdx < stations.length - 1) {
+            // Tuner is to the right — use gap to right neighbor
+            gap = parseFloat(stations[stationIdx + 1].freq) - stationFreqNum;
+          } else if (stationIdx > 0) {
+            gap = stationFreqNum - parseFloat(stations[stationIdx - 1].freq);
+          } else if (stationIdx < stations.length - 1) {
+            gap = parseFloat(stations[stationIdx + 1].freq) - stationFreqNum;
+          }
+        }
+        const t = Math.min(dist / gap, 1);
         const gain = Math.cos(t * Math.PI / 2);
         ch.gainNode.gain.setTargetAtTime(gain, now, 0.02);
       }
@@ -1202,11 +1341,685 @@
       `;
     }
 
+    // ---- Background Shader Engine ----
+    var bgShaderState = { active: 'none', gl: null, program: null, startTime: 0, uTime: null, uRes: null, uAudio: null, uBass: null, uHigh: null, uParams: [], paramValues: [], uParamAudio: [], paramAudioEnabled: [] };
+
+    // Shader param persistence
+    function loadShaderParams() {
+      try { return JSON.parse(localStorage.getItem('sunotime-shader-params')) || {}; } catch (e) { return {}; }
+    }
+    function saveShaderParams(all) {
+      try { localStorage.setItem('sunotime-shader-params', JSON.stringify(all)); } catch (e) {}
+    }
+    function getShaderParamValues(name, shader) {
+      var saved = loadShaderParams();
+      var vals = [];
+      if (!shader || !shader.params) return vals;
+      for (var i = 0; i < shader.params.length; i++) {
+        var p = shader.params[i];
+        vals.push(saved[name] && saved[name][p.name] !== undefined ? saved[name][p.name] : p.default);
+      }
+      return vals;
+    }
+    function saveShaderParamValue(shaderName, paramName, value) {
+      var all = loadShaderParams();
+      if (!all[shaderName]) all[shaderName] = {};
+      all[shaderName][paramName] = value;
+      saveShaderParams(all);
+    }
+
+    // Global audio reactivity scaling
+    var audioReactivity = { bass: 1.0, mids: 1.0, highs: 1.0 };
+    function loadAudioReactivity() {
+      try { var s = JSON.parse(localStorage.getItem('sunotime-audio-react')); if (s) audioReactivity = s; } catch (e) {}
+    }
+    function saveAudioReactivity() {
+      try { localStorage.setItem('sunotime-audio-react', JSON.stringify(audioReactivity)); } catch (e) {}
+    }
+
+    // Common shader header — prepended to all fragment shaders
+    var shaderHeader = [
+      '#version 300 es',
+      'precision highp float;',
+      'uniform float iTime;',
+      'uniform vec2 iResolution;',
+      'uniform float iAudioLevel;',
+      'uniform float iBass;',
+      'uniform float iHigh;',
+      'uniform float iP0;',
+      'uniform float iP1;',
+      'uniform float iP2;',
+      'uniform float iP3;',
+      'uniform float iP0a;',
+      'uniform float iP1a;',
+      'uniform float iP2a;',
+      'uniform float iP3a;',
+      'out vec4 outColor;'
+    ].join('\n') + '\n';
+
+    var bgShaders = {
+      sunset: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.2, audio: 0 },
+          { name: 'Brightness', min: 0.5, max: 3.0, step: 0.1, default: 1.0, audio: 0.5 },
+          { name: 'Wave Amp', min: 0.1, max: 1.5, step: 0.05, default: 0.6, audio: 0.3 },
+          { name: 'Color Spd', min: 0.1, max: 2.0, step: 0.1, default: 0.5, audio: 0.4 }
+        ],
+        source: [
+          '#define BRIGHTNESS (iP1 + iAudioLevel * iP1a)',
+          '#define COLOR_BASE 1.5',
+          '#define COLOR_SPEED (iP3 + iBass * iP3a)',
+          '#define RGB vec3(0.0, 1.0, 2.0)',
+          '#define COLOR_WAVE 14.0',
+          '#define COLOR_DOT vec3(1,-1,0)',
+          '#define WAVE_STEPS 8.0',
+          '#define WAVE_FREQ 5.0',
+          '#define WAVE_AMP (iP2 + iAudioLevel * iP2a)',
+          '#define WAVE_EXP 1.8',
+          '#define WAVE_VELOCITY vec3(iP0)',
+          '#define PASSTHROUGH 0.2',
+          '#define SOFTNESS 0.005',
+          '#define STEPS 50.0',
+          '#define SKY 10.0',
+          '#define FOV 1.0',
+          'void main() {',
+          '  vec2 fragCoord = gl_FragCoord.xy;',
+          '  float z = 0.0; float d = 0.0; float s = 0.0;',
+          '  vec3 dir = normalize(vec3(2.0*fragCoord - iResolution.xy, -FOV * iResolution.y));',
+          '  vec3 col = vec3(0);',
+          '  for(float i = 0.0; i<STEPS; i++) {',
+          '    vec3 p = z * dir;',
+          '    for(float j = 0.0, f = WAVE_FREQ; j<WAVE_STEPS; j++, f *= WAVE_EXP)',
+          '      p += WAVE_AMP*sin(p*f - WAVE_VELOCITY*iTime).yzx / f;',
+          '    s = 0.3 - abs(p.y);',
+          '    d = SOFTNESS + max(s, -s*PASSTHROUGH) / 4.0;',
+          '    z += d;',
+          '    float phase = COLOR_WAVE * s + dot(p,COLOR_DOT) + COLOR_SPEED*iTime;',
+          '    col += (cos(phase - RGB) + COLOR_BASE) * exp(s*SKY) / d;',
+          '  }',
+          '  col *= SOFTNESS / STEPS * BRIGHTNESS;',
+          '  outColor = vec4(tanh(col * col), 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      plasma: {
+        params: [
+          { name: 'Speed', min: 0.1, max: 2.0, step: 0.1, default: 0.4, audio: 0.6 },
+          { name: 'Frequency', min: 1.0, max: 10.0, step: 0.5, default: 3.0, audio: 4.0 },
+          { name: 'Brightness', min: 0.1, max: 1.0, step: 0.05, default: 0.3, audio: 0.4 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * (iP0 + iBass * iP0a);',
+          '  float freq = iP1 + iAudioLevel * iP1a;',
+          '  float v = sin(uv.x * freq + t);',
+          '  v += sin(uv.y * freq * 0.8 + t * 1.3);',
+          '  v += sin((uv.x + uv.y) * freq * 0.6 + t * 0.7);',
+          '  v += sin(length(uv - 0.5) * freq * 1.5 - t * 1.1);',
+          '  v *= 0.25;',
+          '  vec3 col = vec3(',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t),',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t + 2.094),',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t + 4.189)',
+          '  );',
+          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      fractal: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 0.8, step: 0.05, default: 0.15, audio: 0.3 },
+          { name: 'Folds', min: 3.0, max: 12.0, step: 1.0, default: 7.0, audio: 0 },
+          { name: 'Spread', min: 0.2, max: 1.2, step: 0.1, default: 0.5, audio: 0 },
+          { name: 'Brightness', min: 0.5, max: 3.0, step: 0.25, default: 1.0, audio: 0.8 }
+        ],
+        source: [
+          'vec3 pal(float d) {',
+          '  return mix(vec3(0.15, 0.5, 0.8), vec3(0.9, 0.2, 0.8), d);',
+          '}',
+          'vec2 rot(vec2 p, float a) {',
+          '  float c = cos(a), s = sin(a);',
+          '  return p * mat2(c, s, -s, c);',
+          '}',
+          'float sdf(vec3 p) {',
+          '  int N = int(iP1);',
+          '  for (int i = 0; i < 12; i++) {',
+          '    if (i >= N) break;',
+          '    float t = iTime * iP0 + iBass * iP0a;',
+          '    p.xz = rot(p.xz, t);',
+          '    p.xy = rot(p.xy, t * 1.57);',
+          '    p.xz = abs(p.xz);',
+          '    p.xz -= iP2;',
+          '  }',
+          '  return dot(sign(p), p) / 5.0;',
+          '}',
+          'void main() {',
+          '  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.x;',
+          '  vec3 ro = vec3(0.0, 0.0, -50.0 + iBass * 5.0);',
+          '  ro.xz = rot(ro.xz, iTime * iP0 * 0.5);',
+          '  vec3 cf = normalize(-ro);',
+          '  vec3 cs = normalize(cross(cf, vec3(0, 1, 0)));',
+          '  vec3 cu = normalize(cross(cf, cs));',
+          '  vec3 rd = normalize(ro + cf * 3.0 + uv.x * cs + uv.y * cu - ro);',
+          '  float t = 0.0;',
+          '  vec3 col = vec3(0);',
+          '  for (float i = 0.0; i < 48.0; i++) {',
+          '    vec3 p = ro + rd * t;',
+          '    float d = sdf(p) * 0.5;',
+          '    if (d < 0.02 || d > 100.0) break;',
+          '    col += pal(length(p) * 0.1) / (300.0 * d);',
+          '    t += d;',
+          '  }',
+          '  col *= iP3 + iAudioLevel * iP3a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      aurora: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.3, audio: 0 },
+          { name: 'Amplitude', min: 0.05, max: 0.5, step: 0.05, default: 0.15, audio: 0.2 },
+          { name: 'Shimmer', min: 0.0, max: 1.0, step: 0.1, default: 0.2, audio: 0 },
+          { name: 'Brightness', min: 0.1, max: 1.0, step: 0.05, default: 0.4, audio: 0.6 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  float amp = iP1 + iAudioLevel * iP1a;',
+          '  float wave = 0.0;',
+          '  for (float i = 1.0; i < 6.0; i++) {',
+          '    wave += amp / i * sin(uv.x * 6.0 * i + t * (0.5 + i * 0.3) + sin(t * 0.2) * 2.0);',
+          '  }',
+          '  float band = smoothstep(0.1, 0.0, abs(uv.y - 0.5 - wave * 0.3));',
+          '  band += 0.3 * smoothstep(0.2, 0.0, abs(uv.y - 0.5 - wave * 0.3));',
+          '  float shimmer = 0.8 + iP2 * sin(uv.x * 40.0 + t * 5.0) * iHigh;',
+          '  vec3 col1 = vec3(0.1, 0.8, 0.4);',
+          '  vec3 col2 = vec3(0.1, 0.4, 0.9);',
+          '  vec3 col3 = vec3(0.5, 0.2, 0.8);',
+          '  float phase = sin(uv.x * 3.0 + t) * 0.5 + 0.5;',
+          '  vec3 col = mix(mix(col1, col2, phase), col3, sin(t * 0.2) * 0.5 + 0.5);',
+          '  col *= band * shimmer * (iP3 + iAudioLevel * iP3a);',
+          '  col += vec3(0.02, 0.01, 0.04) * (1.0 - uv.y);',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      ocean: {
+        params: [
+          { name: 'Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.4, audio: 0.5 },
+          { name: 'Scale', min: 2.0, max: 12.0, step: 0.5, default: 6.0, audio: 0 },
+          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.6, audio: 0.5 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * (iP0 + iBass * iP0a);',
+          '  vec2 p = uv * iP1;',
+          '  float caustic = 0.0;',
+          '  for (float i = 1.0; i < 4.0; i++) {',
+          '    vec2 q = p * i;',
+          '    q += vec2(sin(q.y + t * i * 0.3), cos(q.x + t * i * 0.2));',
+          '    caustic += 1.0 / (1.0 + 50.0 * abs(sin(q.x + q.y)));',
+          '  }',
+          '  caustic /= 3.0;',
+          '  float highlight = caustic * (0.5 + iHigh * 1.5);',
+          '  vec3 deep = vec3(0.01, 0.04, 0.12);',
+          '  vec3 mid = vec3(0.02, 0.12, 0.25);',
+          '  vec3 bright = vec3(0.1, 0.4, 0.5);',
+          '  vec3 col = mix(deep, mid, caustic);',
+          '  col += bright * highlight * 0.4;',
+          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      winamp: {
+        params: [
+          { name: 'Speed', min: 0.5, max: 5.0, step: 0.25, default: 2.0, audio: 0 },
+          { name: 'Line Width', min: 0.005, max: 0.06, step: 0.005, default: 0.02, audio: 0 },
+          { name: 'Waves', min: 2.0, max: 8.0, step: 1.0, default: 4.0, audio: 0 },
+          { name: 'Brightness', min: 0.3, max: 1.5, step: 0.1, default: 0.8, audio: 0 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  vec3 col = vec3(0.01, 0.005, 0.02);',
+          '  float audio1 = iAudioLevel + iBass * 0.5;',
+          '  float audio2 = iAudioLevel + iHigh * 0.5;',
+          '  float nWaves = iP2;',
+          '  float y1 = 0.0;',
+          '  for (float i = 1.0; i <= 8.0; i++) {',
+          '    if (i > nWaves) break;',
+          '    y1 += sin(uv.x * (3.0 + i * 2.0) + t * (0.7 + i * 0.3)) * audio1 / (i * 1.5);',
+          '  }',
+          '  y1 = y1 * 0.15 + 0.35;',
+          '  float d1 = abs(uv.y - y1);',
+          '  float line1 = smoothstep(iP1, iP1 * 0.2, d1);',
+          '  col += vec3(0.4, 0.15, 0.8) * line1 * iP3;',
+          '  col += vec3(0.2, 0.05, 0.5) * smoothstep(iP1 * 4.0, iP1 * 0.5, d1) * 0.3;',
+          '  float y2 = 0.0;',
+          '  for (float i = 1.0; i <= 8.0; i++) {',
+          '    if (i > nWaves) break;',
+          '    y2 += cos(uv.x * (2.5 + i * 1.8) + t * (0.9 + i * 0.25) + 1.5) * audio2 / (i * 1.5);',
+          '  }',
+          '  y2 = y2 * 0.15 + 0.65;',
+          '  float d2 = abs(uv.y - y2);',
+          '  float line2 = smoothstep(iP1, iP1 * 0.2, d2);',
+          '  col += vec3(0.8, 0.5, 0.1) * line2 * iP3;',
+          '  col += vec3(0.5, 0.3, 0.0) * smoothstep(iP1 * 4.0, iP1 * 0.5, d2) * 0.3;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      gradient: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.2, audio: 0 },
+          { name: 'Warp', min: 0.0, max: 0.8, step: 0.05, default: 0.3, audio: 0 },
+          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.5, audio: 0.8 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  float warp = iBass * iP1;',
+          '  vec2 p = uv;',
+          '  p.x += sin(uv.y * 3.0 + t) * warp;',
+          '  p.y += cos(uv.x * 3.0 + t * 0.7) * warp;',
+          '  float d1 = length(p - vec2(0.3 + 0.2 * sin(t), 0.4 + 0.2 * cos(t * 0.8)));',
+          '  float d2 = length(p - vec2(0.7 + 0.2 * cos(t * 0.6), 0.6 + 0.2 * sin(t * 0.9)));',
+          '  float d3 = length(p - vec2(0.5 + 0.3 * sin(t * 0.4), 0.3 + 0.2 * cos(t * 1.1)));',
+          '  vec3 c1 = vec3(0.4, 0.05, 0.2) / (d1 + 0.3);',
+          '  vec3 c2 = vec3(0.05, 0.15, 0.4) / (d2 + 0.3);',
+          '  vec3 c3 = vec3(0.2, 0.05, 0.35) / (d3 + 0.3);',
+          '  vec3 col = (c1 + c2 + c3) * 0.15;',
+          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      chromatic: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 0.8, step: 0.05, default: 0.2, audio: 0 },
+          { name: 'Distortion', min: 0.5, max: 4.0, step: 0.25, default: 1.5, audio: 0.8 },
+          { name: 'Hue Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.5, audio: 0.3 },
+          { name: 'Brightness', min: 0.05, max: 0.4, step: 0.025, default: 0.1, audio: 0.15 }
+        ],
+        source: [
+          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'float noise(vec2 p) {',
+          '  vec2 i = floor(p); vec2 f = fract(p);',
+          '  f = f * f * (3.0 - 2.0 * f);',
+          '  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),',
+          '             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);',
+          '}',
+          'void main() {',
+          '  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.y;',
+          '  float t = iTime * iP0;',
+          '  float dist = iP1 + iBass * iP1a;',
+          '  vec2 p = uv;',
+          '  p += vec2(noise(uv * 3.0 + t), noise(uv * 3.0 + t + 100.0)) * dist * 0.3;',
+          '  p += vec2(noise(p * 5.0 - t * 0.7), noise(p * 5.0 - t * 0.7 + 50.0)) * dist * 0.15;',
+          '  float r = length(p);',
+          '  float a = atan(p.y, p.x);',
+          '  float h = (a / 3.14159) * 0.5 + 0.5;',
+          '  h += noise(uv * 4.0 + t * 0.5) * 0.3;',
+          '  float hueSpd = iP2 + iHigh * iP2a;',
+          '  vec3 col = 0.5 + 0.5 * cos((-t * hueSpd + h + 0.9 * vec3(0.0, 0.33, 0.67)) * 6.28318);',
+          '  float pattern = noise(p * 6.0 + t) * 0.5 + noise(p * 12.0 - t * 0.5) * 0.25;',
+          '  col *= (pattern + 0.3) * smoothstep(1.5, 0.0, r);',
+          '  col *= iP3 + iAudioLevel * iP3a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      warp: {
+        params: [
+          { name: 'Speed', min: 0.1, max: 2.0, step: 0.1, default: 0.5, audio: 0 },
+          { name: 'Zoom', min: 0.5, max: 4.0, step: 0.25, default: 1.5, audio: 0 },
+          { name: 'Twist', min: 0.5, max: 5.0, step: 0.25, default: 2.0, audio: 2.0 },
+          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.5, audio: 0.5 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.y;',
+          '  float t = iTime * iP0;',
+          '  float r = length(uv);',
+          '  float a = atan(uv.y, uv.x);',
+          '  float twist = iP2 + iBass * iP2a;',
+          '  a += twist * r - t;',
+          '  r *= iP1;',
+          '  float v = sin(a * 3.0 + t) * cos(r * 6.0 - t * 0.5);',
+          '  v += sin(r * 8.0 - t) * 0.5;',
+          '  vec3 col = vec3(',
+          '    0.5 + 0.5 * sin(v * 3.14 + t),',
+          '    0.5 + 0.5 * sin(v * 3.14 + t + 2.1),',
+          '    0.5 + 0.5 * sin(v * 3.14 + t + 4.2)',
+          '  );',
+          '  col *= (iP3 + iAudioLevel * iP3a) * smoothstep(1.2, 0.0, r);',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      lava: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 0.5, step: 0.05, default: 0.15, audio: 0 },
+          { name: 'Scale', min: 1.0, max: 6.0, step: 0.5, default: 2.5, audio: 0 },
+          { name: 'Brightness', min: 0.3, max: 2.0, step: 0.1, default: 0.8, audio: 0.5 }
+        ],
+        source: [
+          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'float noise(vec2 p) {',
+          '  vec2 i = floor(p); vec2 f = fract(p);',
+          '  f = f * f * (3.0 - 2.0 * f);',
+          '  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),',
+          '             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);',
+          '}',
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  vec2 p = uv * iP1;',
+          '  float n = 0.0;',
+          '  n += 0.5 * noise(p + t);',
+          '  n += 0.25 * noise(p * 2.0 - t * 0.7);',
+          '  n += 0.125 * noise(p * 4.0 + t * 0.3);',
+          '  float blob = smoothstep(0.35, 0.55, n + iBass * 0.15);',
+          '  vec3 hot = vec3(1.0, 0.3, 0.0);',
+          '  vec3 cool = vec3(0.15, 0.02, 0.0);',
+          '  vec3 glow = vec3(1.0, 0.8, 0.2);',
+          '  vec3 col = mix(cool, hot, blob);',
+          '  col = mix(col, glow, blob * blob);',
+          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      clouds: {
+        params: [
+          { name: 'Speed', min: 0.02, max: 0.3, step: 0.02, default: 0.08, audio: 0 },
+          { name: 'Scale', min: 1.0, max: 6.0, step: 0.5, default: 3.0, audio: 0 },
+          { name: 'Density', min: 0.2, max: 0.8, step: 0.05, default: 0.45, audio: 0 },
+          { name: 'Brightness', min: 0.1, max: 0.6, step: 0.05, default: 0.25, audio: 0.3 }
+        ],
+        source: [
+          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+          'float noise(vec2 p) {',
+          '  vec2 i = floor(p); vec2 f = fract(p);',
+          '  f = f * f * (3.0 - 2.0 * f);',
+          '  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),',
+          '             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);',
+          '}',
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  vec2 p = uv * iP1 + vec2(t, t * 0.3);',
+          '  float n = 0.0;',
+          '  float a = 0.5;',
+          '  for (int i = 0; i < 4; i++) {',
+          '    n += a * noise(p);',
+          '    p *= 2.0; a *= 0.5;',
+          '  }',
+          '  float cloud = smoothstep(iP2, iP2 + 0.2, n + iBass * 0.1);',
+          '  vec3 sky = vec3(0.02, 0.03, 0.08);',
+          '  vec3 cCol = vec3(0.15, 0.18, 0.25);',
+          '  vec3 col = mix(sky, cCol, cloud);',
+          '  col *= iP3 + iAudioLevel * iP3a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      kaleidoscope: {
+        params: [
+          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.3, audio: 0 },
+          { name: 'Segments', min: 3.0, max: 12.0, step: 1.0, default: 6.0, audio: 0 },
+          { name: 'Zoom', min: 1.0, max: 8.0, step: 0.5, default: 3.0, audio: 0 },
+          { name: 'Brightness', min: 0.2, max: 1.0, step: 0.05, default: 0.4, audio: 0.4 }
+        ],
+        source: [
+          'void main() {',
+          '  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.y;',
+          '  float t = iTime * iP0;',
+          '  float r = length(uv);',
+          '  float a = atan(uv.y, uv.x);',
+          '  float seg = iP1;',
+          '  a = mod(a, 6.28318 / seg);',
+          '  a = abs(a - 3.14159 / seg);',
+          '  vec2 p = vec2(cos(a), sin(a)) * r * iP2;',
+          '  float v1 = sin(p.x * 4.0 + t) * cos(p.y * 4.0 - t * 0.7);',
+          '  float v2 = sin(length(p) * 6.0 - t * 1.2);',
+          '  float v = v1 + v2;',
+          '  vec3 col = vec3(',
+          '    0.5 + 0.5 * sin(v + t),',
+          '    0.5 + 0.5 * sin(v + t + 2.094),',
+          '    0.5 + 0.5 * sin(v + t + 4.189)',
+          '  );',
+          '  col *= (iP3 + iAudioLevel * iP3a) * smoothstep(1.0, 0.0, r);',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      },
+
+      voronoi: {
+        params: [
+          { name: 'Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.4, audio: 0 },
+          { name: 'Scale', min: 2.0, max: 12.0, step: 1.0, default: 5.0, audio: 0 },
+          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.5, audio: 0.6 }
+        ],
+        source: [
+          'vec2 hash2(vec2 p) {',
+          '  return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5);',
+          '}',
+          'void main() {',
+          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
+          '  float t = iTime * iP0;',
+          '  vec2 p = uv * iP1;',
+          '  vec2 ip = floor(p);',
+          '  vec2 fp = fract(p);',
+          '  float md = 8.0;',
+          '  float md2 = 8.0;',
+          '  vec2 mg;',
+          '  for (int j = -1; j <= 1; j++) {',
+          '    for (int i = -1; i <= 1; i++) {',
+          '      vec2 g = vec2(float(i), float(j));',
+          '      vec2 o = hash2(ip + g);',
+          '      o = 0.5 + 0.5 * sin(t + 6.28 * o);',
+          '      vec2 r = g + o - fp;',
+          '      float d = dot(r, r);',
+          '      if (d < md) { md2 = md; md = d; mg = g; }',
+          '      else if (d < md2) { md2 = d; }',
+          '    }',
+          '  }',
+          '  float edge = md2 - md;',
+          '  float cell = md;',
+          '  vec3 col = vec3(0);',
+          '  float hue = dot(mg, vec2(1.0, 0.7)) + t * 0.3;',
+          '  col = vec3(0.5+0.5*sin(hue), 0.5+0.5*sin(hue+2.1), 0.5+0.5*sin(hue+4.2));',
+          '  col *= 0.3 + 0.7 * (1.0 - cell);',
+          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  outColor = vec4(col, 1.0);',
+          '}'
+        ].join('\n')
+      }
+    };
+
+    function initShaderBG(name) {
+      var shaderCanvas = document.getElementById('bg-shader');
+      var bgArtEl = document.getElementById('bg-art');
+
+      if (name === 'none' || !bgShaders[name]) {
+        bgShaderState.active = 'none';
+        shaderCanvas.style.display = 'none';
+        bgArtEl.style.display = '';
+        // Don't destroy GL context — just stop rendering so we can reuse it
+        return;
+      }
+
+      bgShaderState.active = name;
+      shaderCanvas.style.display = 'block';
+      bgArtEl.style.display = 'none';
+
+      // Reuse existing GL context if available
+      var gl = bgShaderState.gl || shaderCanvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
+      if (!gl) {
+        console.warn('WebGL2 not available');
+        shaderCanvas.style.display = 'none';
+        bgArtEl.style.display = '';
+        bgShaderState.active = 'none';
+        return;
+      }
+
+      // Clean up old program
+      if (bgShaderState.program) {
+        gl.deleteProgram(bgShaderState.program);
+        bgShaderState.program = null;
+      }
+
+      var shader = bgShaders[name];
+      var fullSource = shaderHeader + shader.source;
+
+      var vsrc = '#version 300 es\nin vec2 pos;void main(){gl_Position=vec4(pos,0,1);}';
+      var vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, vsrc);
+      gl.compileShader(vs);
+
+      var fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, fullSource);
+      gl.compileShader(fs);
+      if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(fs));
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
+        shaderCanvas.style.display = 'none';
+        bgArtEl.style.display = '';
+        bgShaderState.active = 'none';
+        return;
+      }
+
+      var prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      gl.useProgram(prog);
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
+
+      // Setup quad buffer (only once — reuse if already set)
+      if (!bgShaderState.gl) {
+        var buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+      }
+      var posLoc = gl.getAttribLocation(prog, 'pos');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      bgShaderState.gl = gl;
+      bgShaderState.program = prog;
+      bgShaderState.startTime = Date.now();
+      bgShaderState.uTime = gl.getUniformLocation(prog, 'iTime');
+      bgShaderState.uRes = gl.getUniformLocation(prog, 'iResolution');
+      bgShaderState.uAudio = gl.getUniformLocation(prog, 'iAudioLevel');
+      bgShaderState.uBass = gl.getUniformLocation(prog, 'iBass');
+      bgShaderState.uHigh = gl.getUniformLocation(prog, 'iHigh');
+      bgShaderState.uParams = [];
+      for (var pi = 0; pi < 4; pi++) {
+        bgShaderState.uParams.push(gl.getUniformLocation(prog, 'iP' + pi));
+      }
+      bgShaderState.paramValues = getShaderParamValues(name, shader);
+
+      // Per-param audio scale uniforms
+      bgShaderState.uParamAudio = [];
+      for (var pai = 0; pai < 4; pai++) {
+        bgShaderState.uParamAudio.push(gl.getUniformLocation(prog, 'iP' + pai + 'a'));
+      }
+      // Load per-param audio-enabled state
+      var savedAudio = {};
+      try { savedAudio = JSON.parse(localStorage.getItem('sunotime-shader-audio')) || {}; } catch (e) {}
+      bgShaderState.paramAudioEnabled = [];
+      for (var pae = 0; pae < (shader.params ? shader.params.length : 0); pae++) {
+        var defOn = (shader.params[pae].audio || 0) > 0;
+        bgShaderState.paramAudioEnabled.push(savedAudio[name] && savedAudio[name][shader.params[pae].name] !== undefined ? savedAudio[name][shader.params[pae].name] : defOn);
+      }
+
+      // Handle GPU context loss gracefully (once per context)
+      if (!bgShaderState._contextLostBound) {
+        bgShaderState._contextLostBound = true;
+        shaderCanvas.addEventListener('webglcontextlost', function(e) {
+          e.preventDefault();
+          console.warn('WebGL context lost, falling back to bg-art');
+          bgShaderState.gl = null;
+          bgShaderState.program = null;
+          bgShaderState.active = 'none';
+          bgShaderState._contextLostBound = false;
+          shaderCanvas.style.display = 'none';
+          bgArtEl.style.display = '';
+        });
+      }
+    }
+
+    function renderShaderBG(audioLevel, bassLevel, highLevel) {
+      var st = bgShaderState;
+      if (!st.gl || st.active === 'none') return;
+      var gl = st.gl;
+      var c = gl.canvas;
+      var dpr = (window.devicePixelRatio || 1) * 0.5;
+      var cw = Math.round(window.innerWidth * dpr);
+      var ch = Math.round(window.innerHeight * dpr);
+      if (c.width !== cw || c.height !== ch) {
+        c.width = cw;
+        c.height = ch;
+      }
+      gl.viewport(0, 0, cw, ch);
+      gl.uniform1f(st.uTime, (Date.now() - st.startTime) / 1000);
+      gl.uniform2f(st.uRes, cw, ch);
+      gl.uniform1f(st.uAudio, (audioLevel || 0) * audioReactivity.mids);
+      gl.uniform1f(st.uBass, (bassLevel || 0) * audioReactivity.bass);
+      gl.uniform1f(st.uHigh, (highLevel || 0) * audioReactivity.highs);
+      var shader = bgShaders[st.active];
+      for (var pi = 0; pi < st.uParams.length; pi++) {
+        if (st.uParams[pi] !== null) gl.uniform1f(st.uParams[pi], st.paramValues[pi] || 0);
+      }
+      for (var pai = 0; pai < st.uParamAudio.length; pai++) {
+        if (st.uParamAudio[pai] !== null) {
+          var scale = (shader && shader.params && shader.params[pai] && st.paramAudioEnabled[pai]) ? (shader.params[pai].audio || 0) : 0;
+          gl.uniform1f(st.uParamAudio[pai], scale);
+        }
+      }
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
     // ---- Visualizer ----
 
     function startVisualizer() {
       if (visualizerRunning) return;
       visualizerRunning = true;
+
+      // Auto-start default shader if WebGL2 is available and no shader active
+      if (webgl2Available && bgShaderState.active === 'none') {
+        initShaderBG(DEFAULT_SHADER);
+        // Update dev menu shader button highlights
+        var menuEl = document.getElementById('dev-menu');
+        if (menuEl) {
+          var allShaderBtns = menuEl.querySelectorAll('button[data-shader]');
+          for (var si = 0; si < allShaderBtns.length; si++) {
+            allShaderBtns[si].classList.toggle('active-fx', allShaderBtns[si].getAttribute('data-shader') === DEFAULT_SHADER);
+          }
+        }
+      }
 
       const canvas = document.getElementById("visualizer");
       const ctx = canvas.getContext("2d");
@@ -1222,7 +2035,7 @@
 
       function getBarColor(val, index, total, edgeFadeOverride) {
         var cm = visualizerFx.colorMode;
-        var edgeFade = edgeFadeOverride !== undefined ? edgeFadeOverride : Math.min(1, (index / total) * 4, ((total - 1 - index) / total) * 4);
+        var edgeFade = edgeFadeOverride !== undefined ? edgeFadeOverride : Math.min(1, ((total - 1 - index) / total) * 4);
         var alpha = (val * 0.85 + 0.08) * edgeFade;
         var color, glowColor, peakColor;
         if (cm === 'disco') {
@@ -1273,10 +2086,11 @@
       function drawBars(data, w, h) {
         var half = Math.floor(data.length / 2);
         var totalBars = half * 2;
-        var gap = 1.5;
-        var barWidth = Math.max(2, w / totalBars - gap);
+        var bp = visualizerFx.params.bars;
+        var gap = bp.gap;
+        var barWidth = Math.max(bp.minWidth, w / totalBars - gap);
         var step = w / totalBars;
-        var maxBarHeight = h * 0.92;
+        var maxBarHeight = h * bp.height;
 
         if (!peaks || peaks.length !== half) {
           peaks = new Float32Array(half);
@@ -1285,7 +2099,7 @@
         }
 
         ctx.save();
-        ctx.shadowBlur = 12 * visualizerFx.glowMultiplier;
+        ctx.shadowBlur = bp.shadowBlur * visualizerFx.glowMultiplier;
 
         for (var i = 0; i < half; i++) {
           var val = data[i] / 255;
@@ -1309,12 +2123,12 @@
           if (val >= peaks[i]) {
             peaks[i] = val;
             peakVel[i] = 0;
-            peakHold[i] = PEAK_HOLD;
+            peakHold[i] = bp.peakHold;
           } else {
             if (peakHold[i] > 0) {
               peakHold[i]--;
             } else {
-              peakVel[i] += PEAK_GRAVITY;
+              peakVel[i] += bp.peakGravity;
               peaks[i] -= peakVel[i];
               if (peaks[i] < 0) peaks[i] = 0;
             }
@@ -1325,12 +2139,12 @@
           ctx.fillStyle = bc.peakColor + peakAlpha + ')';
           if (visualizerFx.rain) {
             var peakY = peaks[i] * maxBarHeight * visualizerFx.intensity;
-            ctx.fillRect(xRight, peakY, barWidth, 2);
-            ctx.fillRect(xLeft, peakY, barWidth, 2);
+            ctx.fillRect(xRight, peakY, barWidth, bp.peakHeight);
+            ctx.fillRect(xLeft, peakY, barWidth, bp.peakHeight);
           } else {
             var peakY2 = h - peaks[i] * maxBarHeight * visualizerFx.intensity;
-            ctx.fillRect(xRight, peakY2 - 2, barWidth, 2);
-            ctx.fillRect(xLeft, peakY2 - 2, barWidth, 2);
+            ctx.fillRect(xRight, peakY2 - bp.peakHeight, barWidth, bp.peakHeight);
+            ctx.fillRect(xLeft, peakY2 - bp.peakHeight, barWidth, bp.peakHeight);
           }
           ctx.shadowColor = bc.glowColor;
         }
@@ -1346,17 +2160,18 @@
         for (var j = 0; j < timeData.length; j++) avgVal += Math.abs(timeData[j] - 128) / 128;
         avgVal /= timeData.length;
 
+        var sp = visualizerFx.params.scope;
         ctx.save();
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = sp.lineWidth;
         ctx.strokeStyle = getStrokeColor(avgVal);
-        ctx.shadowBlur = 15 * visualizerFx.glowMultiplier;
+        ctx.shadowBlur = sp.shadowBlur * visualizerFx.glowMultiplier;
         ctx.shadowColor = ctx.strokeStyle;
 
         ctx.beginPath();
         var sliceWidth = w / timeData.length;
         for (var i = 0; i < timeData.length; i++) {
           var v = (timeData[i] - 128) / 128;
-          var y = (h / 2) + v * (h / 2) * 0.8 * visualizerFx.intensity;
+          var y = (h / 2) + v * (h / 2) * sp.amplitude * visualizerFx.intensity;
           if (i === 0) ctx.moveTo(0, y);
           else ctx.lineTo(i * sliceWidth, y);
         }
@@ -1368,8 +2183,9 @@
         var half = Math.floor(data.length / 2);
         var cx = w / 2, cy = h / 2;
         var minDim = Math.min(w, h);
-        var innerR = minDim * 0.15;
-        var maxLen = minDim * 0.3;
+        var cp = visualizerFx.params.circle;
+        var innerR = minDim * cp.innerRadius;
+        var maxLen = minDim * cp.spikeLength;
 
         if (!peaks || peaks.length !== half) {
           peaks = new Float32Array(half);
@@ -1377,39 +2193,41 @@
           peakHold = new Uint16Array(half);
         }
 
-        // Mirrored: half bins × 2 sides = full circle
-        var totalBars = half * 2;
-        var lineW = Math.max(1.5, (2 * Math.PI * innerR) / totalBars - 0.5);
+        // 4-way symmetry: half bins × 4 quadrants = full circle
+        var totalBars = half * 4;
+        var lineW = Math.max(cp.minLineW, (2 * Math.PI * innerR) / totalBars - 0.5);
 
         ctx.save();
-        ctx.shadowBlur = 10 * visualizerFx.glowMultiplier;
+        ctx.shadowBlur = cp.shadowBlur * visualizerFx.glowMultiplier;
         ctx.lineWidth = lineW;
+
+        var halfPi = Math.PI / 2;
 
         for (var i = 0; i < half; i++) {
           var val = data[i] / 255;
           var barLen = val * maxLen * visualizerFx.intensity;
-          var bc = getBarColor(val, i, half, 1.0); // no edge fade for closed circle
+          var bc = getBarColor(val, i, half, 1.0);
 
-          // Mirror: bass (i=0) at top, spreading clockwise + counterclockwise
-          var angleR = (i / half) * Math.PI - Math.PI / 2;
-          var angleL = -(i / half) * Math.PI - Math.PI / 2;
+          // 4 quadrant angles: bass at top AND bottom, spreading 90° each way
+          var frac = i / half;
+          var angles = [
+            -halfPi + frac * halfPi,   // top → right
+            -halfPi - frac * halfPi,   // top → left
+             halfPi - frac * halfPi,   // bottom → right
+             halfPi + frac * halfPi    // bottom → left
+          ];
 
           ctx.strokeStyle = bc.color;
           ctx.shadowColor = bc.glowColor;
 
-          // Right half
-          var x1 = cx + Math.cos(angleR) * innerR;
-          var y1 = cy + Math.sin(angleR) * innerR;
-          var x2 = cx + Math.cos(angleR) * (innerR + barLen);
-          var y2 = cy + Math.sin(angleR) * (innerR + barLen);
-          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-          // Left half (mirror)
-          x1 = cx + Math.cos(angleL) * innerR;
-          y1 = cy + Math.sin(angleL) * innerR;
-          x2 = cx + Math.cos(angleL) * (innerR + barLen);
-          y2 = cy + Math.sin(angleL) * (innerR + barLen);
-          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          for (var a = 0; a < 4; a++) {
+            var ang = angles[a];
+            var x1 = cx + Math.cos(ang) * innerR;
+            var y1 = cy + Math.sin(ang) * innerR;
+            var x2 = cx + Math.cos(ang) * (innerR + barLen);
+            var y2 = cy + Math.sin(ang) * (innerR + barLen);
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          }
 
           // Peak hold
           if (val >= peaks[i]) {
@@ -1425,27 +2243,26 @@
             }
           }
 
-          // Peak dots on both sides
+          // Peak dots on all 4 sides
           var peakDist = innerR + peaks[i] * maxLen * visualizerFx.intensity;
           var peakAlpha = 0.5 + peaks[i] * 0.5;
           ctx.fillStyle = bc.peakColor + peakAlpha + ')';
           ctx.shadowColor = 'transparent';
 
-          var px = cx + Math.cos(angleR) * peakDist;
-          var py = cy + Math.sin(angleR) * peakDist;
-          ctx.beginPath(); ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2); ctx.fill();
-
-          px = cx + Math.cos(angleL) * peakDist;
-          py = cy + Math.sin(angleL) * peakDist;
-          ctx.beginPath(); ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2); ctx.fill();
+          for (var a = 0; a < 4; a++) {
+            var px = cx + Math.cos(angles[a]) * peakDist;
+            var py = cy + Math.sin(angles[a]) * peakDist;
+            ctx.beginPath(); ctx.arc(px, py, lineW * cp.peakDot, 0, Math.PI * 2); ctx.fill();
+          }
         }
 
         ctx.restore();
       }
 
       function drawBlocks(data, w, h) {
-        var cols = 16, rows = 12;
-        var gapX = 2, gapY = 2;
+        var blkp = visualizerFx.params.blocks;
+        var cols = blkp.cols, rows = blkp.rows;
+        var gapX = blkp.gapX, gapY = blkp.gapY;
         var cellW = (w - (cols + 1) * gapX) / cols;
         var cellH = (h - (rows + 1) * gapY) / rows;
         var binsPerCol = Math.floor(data.length / 2 / cols);
@@ -1466,7 +2283,7 @@
               var bc = getBarColor(avg, col, cols);
               ctx.fillStyle = bc.color;
             } else {
-              ctx.fillStyle = 'rgba(255,255,255,0.03)';
+              ctx.fillStyle = 'rgba(255,255,255,' + blkp.emptyAlpha + ')';
             }
             ctx.fillRect(x, y, cellW, cellH);
           }
@@ -1515,12 +2332,26 @@
         const data = new Uint8Array(bufLen);
         analyserNode.getByteFrequencyData(data);
 
-        // Bass pulse
+        // Bass-driven background breathing (only when CSS fallback is active)
         let bassSum = 0;
         for (let bi = 0; bi < 6; bi++) bassSum += data[bi];
         const bassLevel = bassSum / (6 * 255);
-        const bgOpacity = 0.10 + bassLevel * 0.20;
-        bgArt.style.opacity = bgArt.classList.contains("visible") ? bgOpacity : 0;
+        if (bgShaderState.active === 'none') {
+          const bgOpacity = 0.05 + bassLevel * 0.45;
+          bgArt.style.opacity = bgArt.classList.contains("visible") ? bgOpacity : 0;
+        }
+
+        // Compute audio levels for shader
+        var rmsSum = 0;
+        for (var ai = 0; ai < bufLen; ai++) rmsSum += data[ai] * data[ai];
+        var audioLevel = Math.sqrt(rmsSum / bufLen) / 255;
+        var highSum = 0;
+        var highStart = Math.floor(bufLen * 0.5);
+        for (var hi = highStart; hi < bufLen; hi++) highSum += data[hi];
+        var highLevel = highSum / ((bufLen - highStart) * 255);
+
+        // Render background shader
+        renderShaderBG(audioLevel, bassLevel, highLevel);
 
         // Disco hue rotation
         if (visualizerFx.colorMode === 'disco') {
@@ -1598,34 +2429,63 @@
       });
     }
 
+    var reconnectDelay = 1000;
+
+    function hueToColor(hue) {
+      return "hsl(" + hue + ",90%,60%)";
+    }
+
+    function decodeBinaryMessage(buf) {
+      var view = new DataView(buf);
+      var type = view.getUint8(0);
+
+      if (type === 0x01) {
+        // Batch update
+        var count = view.getUint16(1);
+        for (var i = 0; i < count; i++) {
+          var off = 3 + i * 6;
+          var id = view.getUint16(off);
+          var freq = view.getUint16(off + 2) / 10;
+          var hue = view.getUint16(off + 4);
+          otherUsers[id] = { freq: freq, color: hueToColor(hue) };
+        }
+        scheduleDialRedraw();
+      } else if (type === 0x02) {
+        // Welcome
+        myUserId = view.getUint16(1);
+        otherUsers = {};
+        var count = view.getUint16(3);
+        for (var i = 0; i < count; i++) {
+          var off = 5 + i * 6;
+          var id = view.getUint16(off);
+          var freq = view.getUint16(off + 2) / 10;
+          var hue = view.getUint16(off + 4);
+          otherUsers[id] = { freq: freq, color: hueToColor(hue) };
+        }
+        scheduleDialRedraw();
+      } else if (type === 0x03) {
+        // Leave
+        var id = view.getUint16(1);
+        delete otherUsers[id];
+        scheduleDialRedraw();
+      }
+    }
+
     function connectWebSocket() {
       var proto = location.protocol === "https:" ? "wss:" : "ws:";
       var url = proto + "//" + location.host;
       var ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
 
       ws.onopen = function() {
         wsConn = ws;
-        ws.send(JSON.stringify({ type: "hello", color: userColor, freq: currentFreq }));
+        reconnectDelay = 1000;
+        ws.send(JSON.stringify({ type: "hello", hue: userHue, freq: currentFreq }));
       };
 
       ws.onmessage = function(event) {
-        var msg;
-        try { msg = JSON.parse(event.data); } catch (e) { return; }
-
-        if (msg.type === "welcome") {
-          myUserId = msg.id;
-          otherUsers = {};
-          for (var i = 0; i < msg.users.length; i++) {
-            var u = msg.users[i];
-            otherUsers[u.id] = { freq: u.freq, color: u.color };
-          }
-          scheduleDialRedraw();
-        } else if (msg.type === "user") {
-          otherUsers[msg.id] = { freq: msg.freq, color: msg.color };
-          scheduleDialRedraw();
-        } else if (msg.type === "leave") {
-          delete otherUsers[msg.id];
-          scheduleDialRedraw();
+        if (event.data instanceof ArrayBuffer) {
+          decodeBinaryMessage(event.data);
         }
       };
 
@@ -1633,8 +2493,8 @@
         wsConn = null;
         otherUsers = {};
         scheduleDialRedraw();
-        // Auto-reconnect after 3s
-        setTimeout(connectWebSocket, 3000);
+        setTimeout(connectWebSocket, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
       };
 
       ws.onerror = function() {
@@ -1842,6 +2702,7 @@
     }
 
     async function init() {
+      initShaderSystem();
       renderLoading();
       const res = await fetch("/api/stations");
       stations = await res.json();
@@ -1850,20 +2711,17 @@
       setupTunerInput();
       setupVolumeControls();
 
-      // Show initial prompt
-      const overlay = document.getElementById("overlay");
-      overlay.style.display = "flex";
-      overlay.innerHTML = `
-        <div class="pick-station-icon">&#9685;</div>
-        <div class="pick-station-text">Tune the dial to find a station</div>
-        <div class="pick-station-sub">Drag the slider or use arrow keys</div>
-      `;
+      // Pre-fetch all station data, preload art, then auto-tune to a random station
+      await prefetchAllStations();
+      preloadAlbumArt();
+      setInterval(preloadAlbumArt, 30_000);
 
-      // Pre-fetch all station data, then preload album art for current schedule
-      prefetchAllStations().then(() => {
-        preloadAlbumArt();
-        setInterval(preloadAlbumArt, 30_000);
-      });
+      // Auto-tune to a random station
+      const randomStation = stations[Math.floor(Math.random() * stations.length)];
+      const slider = document.getElementById("tuner-range");
+      slider.value = Math.round(randomStation.freq * 10);
+      ensureAudio();
+      onFrequencyChange(randomStation.freq);
 
       window.addEventListener("resize", () => {
         drawDial();
@@ -2031,12 +2889,196 @@
         }
       }
 
+      // ---- Parameter sliders ----
+      var paramContainer = document.getElementById('dev-params');
+      var paramRanges = {
+        bars:   { gap: [0, 6, 0.5], height: [0.3, 1.0, 0.01], peakHold: [0, 60, 1], peakGravity: [0.0002, 0.005, 0.0001], shadowBlur: [0, 40, 1], peakHeight: [1, 6, 0.5], minWidth: [1, 8, 0.5] },
+        scope:  { lineWidth: [0.5, 8, 0.5], amplitude: [0.2, 2.0, 0.1], shadowBlur: [0, 40, 1] },
+        circle: { innerRadius: [0.05, 0.35, 0.01], spikeLength: [0.1, 0.5, 0.01], shadowBlur: [0, 40, 1], minLineW: [0.5, 4, 0.25], peakDot: [0.2, 1.5, 0.1] },
+        blocks: { cols: [4, 32, 1], rows: [4, 24, 1], gapX: [0, 8, 1], gapY: [0, 8, 1], emptyAlpha: [0, 0.15, 0.005] }
+      };
+
+      function updateDevParams() {
+        var mode = visualizerFx.mode;
+        var ranges = paramRanges[mode];
+        var params = visualizerFx.params[mode];
+        if (!ranges || !params) { paramContainer.innerHTML = ''; return; }
+
+        paramContainer.innerHTML = '';
+        var keys = Object.keys(ranges);
+        for (var k = 0; k < keys.length; k++) {
+          var key = keys[k];
+          var r = ranges[key];
+          var row = document.createElement('div');
+          row.className = 'dev-param-row';
+
+          var label = document.createElement('label');
+          label.textContent = key;
+
+          var input = document.createElement('input');
+          input.type = 'range';
+          input.min = r[0];
+          input.max = r[1];
+          input.step = r[2];
+          input.value = params[key];
+
+          var valSpan = document.createElement('span');
+          valSpan.className = 'dev-param-val';
+          valSpan.textContent = Number(params[key]).toFixed(r[2] < 0.01 ? 4 : r[2] < 1 ? 2 : 0);
+
+          (function(k, r, valSpan) {
+            input.addEventListener('input', function() {
+              var v = parseFloat(this.value);
+              visualizerFx.params[mode][k] = v;
+              valSpan.textContent = v.toFixed(r[2] < 0.01 ? 4 : r[2] < 1 ? 2 : 0);
+            });
+          })(key, r, valSpan);
+
+          row.appendChild(label);
+          row.appendChild(input);
+          row.appendChild(valSpan);
+          paramContainer.appendChild(row);
+        }
+      }
+
+      updateDevParams();
+
+      function saveParamAudioEnabled(shaderName, paramName, enabled) {
+        try {
+          var all = JSON.parse(localStorage.getItem('sunotime-shader-audio')) || {};
+          if (!all[shaderName]) all[shaderName] = {};
+          all[shaderName][paramName] = enabled;
+          localStorage.setItem('sunotime-shader-audio', JSON.stringify(all));
+        } catch (e) {}
+      }
+
+      function updateShaderParams() {
+        var container = document.getElementById('dev-shader-params');
+        if (!container) return;
+        container.innerHTML = '';
+        var name = bgShaderState.active;
+        if (name === 'none' || !bgShaders[name] || !bgShaders[name].params) return;
+        var shader = bgShaders[name];
+        var params = shader.params;
+
+        // Audio Reactivity section
+        var arHeader = document.createElement('div');
+        arHeader.className = 'dev-menu-section';
+        arHeader.textContent = 'Audio Reactivity';
+        container.appendChild(arHeader);
+
+        var arBands = [
+          { key: 'bass', label: 'Bass' },
+          { key: 'mids', label: 'Mids' },
+          { key: 'highs', label: 'Highs' }
+        ];
+        for (var bi = 0; bi < arBands.length; bi++) {
+          (function(band) {
+            var row = document.createElement('div');
+            row.className = 'dev-param-row';
+            var label = document.createElement('label');
+            label.textContent = band.label;
+            var input = document.createElement('input');
+            input.type = 'range';
+            input.min = '0';
+            input.max = '2';
+            input.step = '0.05';
+            input.value = audioReactivity[band.key];
+            var valSpan = document.createElement('span');
+            valSpan.className = 'dev-param-val';
+            valSpan.textContent = Math.round(audioReactivity[band.key] * 100) + '%';
+            input.addEventListener('input', function() {
+              var v = parseFloat(this.value);
+              audioReactivity[band.key] = v;
+              valSpan.textContent = Math.round(v * 100) + '%';
+              saveAudioReactivity();
+            });
+            row.appendChild(label);
+            row.appendChild(input);
+            row.appendChild(valSpan);
+            container.appendChild(row);
+          })(arBands[bi]);
+        }
+
+        // Parameters sub-header
+        var pHeader = document.createElement('div');
+        pHeader.className = 'dev-menu-section';
+        pHeader.textContent = 'Parameters';
+        container.appendChild(pHeader);
+
+        for (var k = 0; k < params.length; k++) {
+          var p = params[k];
+          var row = document.createElement('div');
+          row.className = 'dev-param-row';
+          var label = document.createElement('label');
+          label.textContent = p.name;
+          var input = document.createElement('input');
+          input.type = 'range';
+          input.min = p.min;
+          input.max = p.max;
+          input.step = p.step;
+          input.value = bgShaderState.paramValues[k] !== undefined ? bgShaderState.paramValues[k] : p.default;
+          var valSpan = document.createElement('span');
+          valSpan.className = 'dev-param-val';
+          valSpan.textContent = Number(input.value).toFixed(p.step < 0.01 ? 4 : p.step < 1 ? 2 : 0);
+          (function(idx, p, valSpan, name) {
+            input.addEventListener('input', function() {
+              var v = parseFloat(this.value);
+              bgShaderState.paramValues[idx] = v;
+              valSpan.textContent = v.toFixed(p.step < 0.01 ? 4 : p.step < 1 ? 2 : 0);
+              saveShaderParamValue(name, p.name, v);
+            });
+          })(k, p, valSpan, name);
+          row.appendChild(label);
+          row.appendChild(input);
+          row.appendChild(valSpan);
+
+          // Track checkbox (only for params with audio > 0)
+          if ((p.audio || 0) > 0) {
+            var trackLabel = document.createElement('label');
+            trackLabel.className = 'dev-param-track';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = bgShaderState.paramAudioEnabled[k];
+            (function(idx, p, name) {
+              cb.addEventListener('change', function() {
+                bgShaderState.paramAudioEnabled[idx] = this.checked;
+                saveParamAudioEnabled(name, p.name, this.checked);
+              });
+            })(k, p, name);
+            trackLabel.appendChild(cb);
+            trackLabel.appendChild(document.createTextNode(' Track'));
+            row.appendChild(trackLabel);
+          }
+
+          container.appendChild(row);
+        }
+      }
+
       menu.addEventListener('click', function(e) {
+        // Shader buttons
+        var shaderBtn = e.target.closest('button[data-shader]');
+        if (shaderBtn) {
+          var name = shaderBtn.getAttribute('data-shader');
+          initShaderBG(name);
+          var allShaderBtns = menu.querySelectorAll('button[data-shader]');
+          for (var si = 0; si < allShaderBtns.length; si++) {
+            allShaderBtns[si].classList.toggle('active-fx', allShaderBtns[si].getAttribute('data-shader') === name);
+          }
+          updateShaderParams();
+          return;
+        }
+
+        // FX buttons
         var btn = e.target.closest('button[data-fx]');
         if (!btn) return;
         chatEffects.trigger(btn.getAttribute('data-fx'));
         updateHighlight();
+        updateDevParams();
       });
+
+      // Initial shader params render
+      updateShaderParams();
 
       // Ctrl+Shift+D toggles the menu
       document.addEventListener('keydown', function(e) {

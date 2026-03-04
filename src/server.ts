@@ -266,33 +266,104 @@ const server = createServer(app);
 
 const wss = new WebSocketServer({ server });
 
+// --- Binary protocol constants ---
+const MSG_BATCH = 0x01;
+const MSG_WELCOME = 0x02;
+const MSG_LEAVE = 0x03;
+const ENTRY_SIZE = 6; // uint16 id + uint16 freq*10 + uint16 hue
+const MAX_CONNECTIONS = 10000;
+
 interface ConnectedUser {
-  id: string;
+  id: number;
   freq: number;
-  color: string;
+  hue: number;
   lastMsg: number;
 }
 
 const users = new Map<WebSocket, ConnectedUser>();
 let nextUserId = 1;
+const freeIds: number[] = [];
+const dirtyUsers = new Set<number>();
 
-function broadcast(data: object, exclude?: WebSocket) {
-  const msg = JSON.stringify(data);
-  for (const [ws] of users) {
-    if (ws !== exclude && ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-    }
-  }
+function allocId(): number {
+  return freeIds.length > 0 ? freeIds.pop()! : nextUserId++;
 }
 
+function freeId(id: number) {
+  freeIds.push(id);
+}
+
+// Build a leave frame: [0x03, uint16 id]
+function buildLeaveFrame(id: number): Buffer {
+  const buf = Buffer.alloc(3);
+  buf[0] = MSG_LEAVE;
+  buf.writeUInt16BE(id, 1);
+  return buf;
+}
+
+// Build a welcome frame: [0x02, uint16 myId, uint16 count, ...entries]
+function buildWelcomeFrame(myId: number, others: ConnectedUser[]): Buffer {
+  const buf = Buffer.alloc(1 + 2 + 2 + others.length * ENTRY_SIZE);
+  buf[0] = MSG_WELCOME;
+  buf.writeUInt16BE(myId, 1);
+  buf.writeUInt16BE(others.length, 3);
+  let offset = 5;
+  for (const u of others) {
+    buf.writeUInt16BE(u.id, offset);
+    buf.writeUInt16BE(Math.round(u.freq * 10), offset + 2);
+    buf.writeUInt16BE(u.hue, offset + 4);
+    offset += ENTRY_SIZE;
+  }
+  return buf;
+}
+
+// Batched broadcast: runs every 100ms, sends one binary frame with all dirty users
+setInterval(() => {
+  if (dirtyUsers.size === 0) return;
+
+  // Collect dirty user data
+  const entries: { id: number; freq: number; hue: number }[] = [];
+  for (const [, u] of users) {
+    if (dirtyUsers.has(u.id)) {
+      entries.push(u);
+    }
+  }
+  dirtyUsers.clear();
+
+  if (entries.length === 0) return;
+
+  // Build batch frame: [0x01, uint16 count, ...entries]
+  const buf = Buffer.alloc(1 + 2 + entries.length * ENTRY_SIZE);
+  buf[0] = MSG_BATCH;
+  buf.writeUInt16BE(entries.length, 1);
+  let offset = 3;
+  for (const e of entries) {
+    buf.writeUInt16BE(e.id, offset);
+    buf.writeUInt16BE(Math.round(e.freq * 10), offset + 2);
+    buf.writeUInt16BE(e.hue, offset + 4);
+    offset += ENTRY_SIZE;
+  }
+
+  for (const [ws] of users) {
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount <= 65536) {
+      ws.send(buf);
+    }
+  }
+}, 100);
+
 wss.on("connection", (ws) => {
-  const id = "u" + nextUserId++;
-  const user: ConnectedUser = { id, freq: 98.1, color: "#ff4f00", lastMsg: 0 };
+  // Connection limit
+  if (users.size >= MAX_CONNECTIONS) {
+    ws.close(1013, "Server full");
+    return;
+  }
+
+  const id = allocId();
+  const user: ConnectedUser = { id, freq: 98.1, hue: 30, lastMsg: 0 };
   users.set(ws, user);
 
   ws.on("message", (raw) => {
     const now = Date.now();
-    // Rate limit: drop messages faster than 50ms apart
     if (now - user.lastMsg < 50) return;
     user.lastMsg = now;
 
@@ -304,31 +375,37 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "hello") {
-      user.color = typeof msg.color === "string" ? msg.color.slice(0, 20) : user.color;
+      user.hue = typeof msg.hue === "number" ? Math.max(0, Math.min(359, Math.round(msg.hue))) : user.hue;
       user.freq = typeof msg.freq === "number" ? msg.freq : user.freq;
 
-      // Send welcome with all current users
-      const allUsers = [];
+      // Send binary welcome with all current users
+      const others: ConnectedUser[] = [];
       for (const [, u] of users) {
-        if (u.id !== id) {
-          allUsers.push({ id: u.id, freq: u.freq, color: u.color });
-        }
+        if (u.id !== id) others.push(u);
       }
-      ws.send(JSON.stringify({ type: "welcome", id, users: allUsers }));
+      ws.send(buildWelcomeFrame(id, others));
 
-      // Notify others about the new user
-      broadcast({ type: "user", id, freq: user.freq, color: user.color }, ws);
+      // Mark as dirty so others pick up this new user in next batch
+      dirtyUsers.add(id);
     } else if (msg.type === "tune") {
       if (typeof msg.freq === "number") {
         user.freq = msg.freq;
-        broadcast({ type: "user", id, freq: user.freq, color: user.color }, ws);
+        dirtyUsers.add(id);
       }
     }
   });
 
   ws.on("close", () => {
     users.delete(ws);
-    broadcast({ type: "leave", id });
+    dirtyUsers.delete(id);
+    freeId(id);
+    // Leave is sent immediately (infrequent, must be timely)
+    const frame = buildLeaveFrame(id);
+    for (const [client] of users) {
+      if (client.readyState === WebSocket.OPEN && client.bufferedAmount <= 65536) {
+        client.send(frame);
+      }
+    }
   });
 });
 
