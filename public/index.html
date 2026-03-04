@@ -771,16 +771,16 @@
       rain: false,            // flip bar direction (top-down)
       hueOffset: 0,           // for disco rotation (incremented per frame)
       timer: null,            // setTimeout id for auto-expire
-      mode: 'bars',           // 'bars' | 'scope' | 'circle' | 'blocks'
+      mode: 'scope',          // 'bars' | 'scope' | 'circle' | 'blocks'
       params: {
         bars:   { gap: 1.5, height: 0.92, peakHold: 18, peakGravity: 0.0012, shadowBlur: 12, peakHeight: 2, minWidth: 2 },
-        scope:  { lineWidth: 2.5, amplitude: 0.8, shadowBlur: 15 },
+        scope:  { lineWidth: 1.0, amplitude: 0.3, shadowBlur: 10 },
         circle: { innerRadius: 0.15, spikeLength: 0.3, shadowBlur: 10, minLineW: 1.5, peakDot: 0.6 },
         blocks: { cols: 16, rows: 12, gapX: 2, gapY: 2, emptyAlpha: 0.03 }
       }
     };
 
-    var DEFAULT_SHADER = 'sunset';
+    var DEFAULT_SHADER = 'fractal';
     var webgl2Available = false;
 
     function initShaderSystem() {
@@ -1369,7 +1369,7 @@
     }
 
     // Global audio reactivity scaling
-    var audioReactivity = { bass: 1.0, mids: 1.0, highs: 1.0 };
+    var audioReactivity = { bass: 0, mids: 1.6, highs: 0 };
     function loadAudioReactivity() {
       try { var s = JSON.parse(localStorage.getItem('sunotime-audio-react')); if (s) audioReactivity = s; } catch (e) {}
     }
@@ -1473,8 +1473,8 @@
       fractal: {
         params: [
           { name: 'Speed', min: 0.05, max: 0.8, step: 0.05, default: 0.15, audio: 0.3 },
-          { name: 'Folds', min: 3.0, max: 12.0, step: 1.0, default: 7.0, audio: 0 },
-          { name: 'Spread', min: 0.2, max: 1.2, step: 0.1, default: 0.5, audio: 0 },
+          { name: 'Folds', min: 3.0, max: 12.0, step: 1.0, default: 4.0, audio: 0 },
+          { name: 'Spread', min: 0.2, max: 1.2, step: 0.1, default: 0.8, audio: 0 },
           { name: 'Brightness', min: 0.5, max: 3.0, step: 0.25, default: 1.0, audio: 0.8 }
         ],
         source: [
@@ -2718,10 +2718,11 @@
 
       // Auto-tune to a random station
       const randomStation = stations[Math.floor(Math.random() * stations.length)];
+      const freq = parseFloat(randomStation.freq);
       const slider = document.getElementById("tuner-range");
-      slider.value = Math.round(randomStation.freq * 10);
+      slider.value = Math.round(freq * 10);
       ensureAudio();
-      onFrequencyChange(randomStation.freq);
+      onFrequencyChange(freq);
 
       window.addEventListener("resize", () => {
         drawDial();
