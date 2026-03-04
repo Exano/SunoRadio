@@ -19,10 +19,12 @@ interface Station {
   name: string;
   searchTerm: string;
   keywords: string[];
+  playlistId?: string;
 }
 
 const STATIONS: Station[] = [
   { freq: "88.1", name: "Classical",       searchTerm: "classical",       keywords: ["classical", "orchestra", "symphonic", "piano solo", "cello", "violin solo", "chamber", "baroque", "romantic era", "concerto", "sonata"] },
+  { freq: "88.5", name: "Furbals Lofi",   searchTerm: "lofi",            keywords: ["lo-fi", "lofi", "chill beats", "chillhop"], playlistId: "3cf598ac-f892-49d4-a9be-de9bf8cbfd96" },
   { freq: "89.1", name: "Ambient",         searchTerm: "ambient",         keywords: ["ambient", "drone", "new age", "meditation", "chillout", "atmospheric", "ethereal", "space music", "soundscape"] },
   { freq: "89.9", name: "Jazz",            searchTerm: "jazz",            keywords: ["jazz", "swing", "big band", "bossa", "crooner", "scat", "bebop", "cool jazz", "fusion jazz", "smooth jazz"] },
   { freq: "90.7", name: "Blues",           searchTerm: "blues",           keywords: ["blues", "delta blues", "chicago blues", "blues rock", "slide guitar", "12-bar", "boogie"] },
@@ -127,6 +129,48 @@ async function searchSuno(term: string, retries = 2): Promise<SunoClip[]> {
   return [];
 }
 
+async function fetchPlaylist(playlistId: string, retries = 2): Promise<SunoClip[]> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${SUNO_SEARCH_API.replace("/search", "")}/playlist/${playlistId}`);
+      if (res.status === 429) {
+        console.log(`Rate limited fetching playlist ${playlistId}, retry ${attempt + 1}...`);
+        await delay(2000 * (attempt + 1));
+        continue;
+      }
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      const clips = data?.playlist_clips ?? [];
+      return clips
+        .filter((c: any) => c.clip?.audio_url)
+        .map((c: any) => {
+          const s = c.clip;
+          return {
+            id: s.id,
+            title: s.title,
+            artist: s.display_name ?? "",
+            handle: s.handle ?? "",
+            playCount: s.play_count ?? 0,
+            upvoteCount: s.upvote_count ?? 0,
+            duration: s.metadata?.duration ?? s.duration ?? 0,
+            audioUrl: s.audio_url ?? "",
+            imageUrl: s.image_url ?? "",
+            tags: s.metadata?.tags ?? "",
+            modelVersion: s.major_model_version ?? "",
+            createdAt: s.created_at ?? "",
+          };
+        });
+    } catch {
+      if (attempt < retries) {
+        await delay(1000 * (attempt + 1));
+        continue;
+      }
+      return [];
+    }
+  }
+  return [];
+}
+
 async function fetchStationSongs(station: Station): Promise<SunoClip[]> {
   const now = Date.now();
   const cached = stationCache.get(station.freq);
@@ -134,14 +178,24 @@ async function fetchStationSongs(station: Station): Promise<SunoClip[]> {
     return cached.songs;
   }
 
-  let songs = await enqueue(() => searchSuno(station.searchTerm));
+  let songs: SunoClip[] = [];
 
-  // Fallback: try keywords one by one if primary search returned nothing
+  // Try playlist first if configured
+  if (station.playlistId) {
+    songs = await enqueue(() => fetchPlaylist(station.playlistId!));
+  }
+
+  // Fall back to search
   if (songs.length === 0) {
-    for (const kw of station.keywords) {
-      if (kw === station.searchTerm) continue;
-      songs = await enqueue(() => searchSuno(kw));
-      if (songs.length > 0) break;
+    songs = await enqueue(() => searchSuno(station.searchTerm));
+
+    // Fallback: try keywords one by one if primary search returned nothing
+    if (songs.length === 0) {
+      for (const kw of station.keywords) {
+        if (kw === station.searchTerm) continue;
+        songs = await enqueue(() => searchSuno(kw));
+        if (songs.length > 0) break;
+      }
     }
   }
 
