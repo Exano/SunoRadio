@@ -17,49 +17,107 @@
       overflow: hidden;
     }
 
-    /* --- Tuner Panel --- */
-    .tuner-panel {
-      background: #0d0d14;
+    /* --- Blurred background album art --- */
+    #bg-art {
+      position: fixed;
+      top: -10%;
+      left: -10%;
+      width: 120%;
+      height: 120%;
+      background-size: cover;
+      background-position: center;
+      filter: blur(40px);
+      opacity: 0;
+      transform: scale(1.2);
+      transition: opacity 0.15s ease;
+      z-index: 0;
+      pointer-events: none;
+    }
+    #bg-art.visible { opacity: 0.15; }
+
+    /* --- Top bar --- */
+    .top-bar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: rgba(13, 13, 20, 0.85);
       border-bottom: 1px solid #1a1a25;
-      padding: 16px 20px 12px;
-      user-select: none;
+      min-height: 40px;
     }
 
-    .tuner-freq-display {
-      text-align: center;
-      margin-bottom: 10px;
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .tuner-freq-num {
-      font-size: 48px;
+    .top-freq {
+      font-size: 20px;
       font-weight: 800;
       color: #ff4f00;
       font-variant-numeric: tabular-nums;
-      line-height: 1;
     }
 
-    .tuner-freq-unit {
-      font-size: 18px;
+    .top-freq-unit {
+      font-size: 12px;
       font-weight: 400;
       color: #ff4f00;
       opacity: 0.6;
-      margin-left: 4px;
     }
 
-    .tuner-station-name {
-      font-size: 13px;
+    .top-dot {
+      color: #333;
+      font-size: 10px;
+    }
+
+    .top-station-name {
+      font-size: 12px;
       color: #888;
       text-transform: uppercase;
       letter-spacing: 2px;
-      margin-top: 4px;
-      height: 18px;
-      text-align: center;
+      font-weight: 600;
       transition: opacity 0.3s;
     }
+    .top-station-name.hidden { opacity: 0; }
 
-    .tuner-station-name.hidden { opacity: 0; }
+    .on-air {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #ff4f00;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .on-air.visible { opacity: 1; }
 
-    /* --- Dial Band --- */
+    .on-air-dot {
+      width: 7px;
+      height: 7px;
+      background: #ff4f00;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* --- Tuner Panel (dial) --- */
+    .tuner-panel {
+      position: relative;
+      z-index: 2;
+      background: rgba(13, 13, 20, 0.85);
+      border-bottom: 1px solid #1a1a25;
+      padding: 8px 20px 6px;
+      user-select: none;
+    }
+
     .dial-band-wrapper {
       position: relative;
       height: 56px;
@@ -85,7 +143,6 @@
       transition: left 0.05s linear;
     }
 
-    /* Invisible slider overlays the dial for input */
     #tuner-range {
       position: absolute;
       top: 0;
@@ -102,131 +159,49 @@
       opacity: 0;
     }
 
-    /* --- Main Display --- */
+    .signal-meter {
+      text-align: center;
+      font-size: 10px;
+      color: #333;
+      letter-spacing: 1px;
+      height: 14px;
+      margin-top: 2px;
+    }
+
+    /* --- Main Display (visualizer area) --- */
     .radio-display {
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 32px 20px;
       position: relative;
+      z-index: 1;
       min-height: 0;
       transition: opacity 0.3s;
     }
 
-    .album-art {
-      width: 240px;
-      height: 240px;
-      border-radius: 10px;
-      object-fit: cover;
-      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
-      margin-bottom: 24px;
-      background: #1a1a24;
-    }
-
-    .song-title {
-      font-size: 20px;
-      font-weight: 700;
-      text-align: center;
-      max-width: 480px;
-      line-height: 1.3;
-      margin-bottom: 6px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    #visualizer {
+      display: block;
       width: 100%;
+      height: 100%;
     }
 
-    .song-artist {
-      font-size: 14px;
-      color: #888;
-      margin-bottom: 16px;
-    }
-
-    /* --- Volume --- */
-    .volume-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .vol-icon {
-      background: none;
-      border: none;
-      color: #555;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      transition: color 0.2s;
-    }
-    .vol-icon:hover { color: #fff; }
-    .vol-icon svg { width: 20px; height: 20px; fill: currentColor; }
-
-    .volume-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 80px;
-      height: 3px;
-      background: #222;
-      border-radius: 2px;
-      outline: none;
-    }
-    .volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 12px;
-      height: 12px;
-      background: #ff4f00;
-      border-radius: 50%;
-      cursor: pointer;
-    }
-
-    /* --- ON AIR --- */
-    .on-air {
+    /* Overlay states centered on visualizer */
+    .overlay-state {
       position: absolute;
-      top: 16px;
-      right: 20px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      color: #ff4f00;
-    }
-    .on-air-dot {
-      width: 7px;
-      height: 7px;
-      background: #ff4f00;
-      border-radius: 50%;
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    /* --- Station badge --- */
-    .station-badge {
-      position: absolute;
-      top: 16px;
-      left: 20px;
-      font-size: 11px;
-      color: #444;
-      font-weight: 600;
-    }
-    .station-badge span { color: #ff4f00; }
-
-    /* --- States --- */
-    .tuning {
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100%;
-      gap: 12px;
+      pointer-events: none;
+      z-index: 2;
     }
+
     .tuning-text {
       color: #555;
       font-size: 13px;
@@ -243,28 +218,12 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .between-stations {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      gap: 8px;
-    }
     .between-stations-text {
       color: #333;
       font-size: 14px;
       letter-spacing: 0.5px;
     }
 
-    .pick-station {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      gap: 8px;
-    }
     .pick-station-icon {
       font-size: 40px;
       margin-bottom: 8px;
@@ -278,34 +237,123 @@
     .pick-station-sub {
       color: #333;
       font-size: 12px;
+      margin-top: 4px;
     }
 
-    .empty-msg {
+    /* --- Bottom bar --- */
+    .bottom-bar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: rgba(13, 13, 20, 0.9);
+      border-top: 1px solid #1a1a25;
+      min-height: 48px;
+      gap: 12px;
+    }
+
+    .bottom-song-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .bottom-note {
+      color: #ff4f00;
+      font-size: 16px;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .bottom-note.visible { opacity: 1; }
+
+    .bottom-song-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bottom-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e0e0e0;
+    }
+
+    .bottom-sep {
       color: #444;
-      font-size: 13px;
-      text-align: center;
-      padding: 40px;
+      margin: 0 4px;
+      font-weight: 300;
     }
 
-    /* --- Signal meter --- */
-    .signal-meter {
-      text-align: center;
-      font-size: 10px;
-      color: #333;
-      letter-spacing: 1px;
-      height: 14px;
-      margin-top: 2px;
+    .bottom-artist {
+      font-size: 14px;
+      color: #888;
+    }
+
+    .volume-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .vol-icon {
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: color 0.2s;
+    }
+    .vol-icon:hover { color: #fff; }
+    .vol-icon svg { width: 18px; height: 18px; fill: currentColor; }
+
+    .volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 70px;
+      height: 3px;
+      background: #222;
+      border-radius: 2px;
+      outline: none;
+    }
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #ff4f00;
+      border-radius: 50%;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
-  <!-- Tuner Panel -->
-  <div class="tuner-panel" id="tuner-panel">
-    <div class="tuner-freq-display">
-      <span class="tuner-freq-num" id="tuner-freq-num">98.1</span><span class="tuner-freq-unit">FM</span>
-      <div class="tuner-station-name hidden" id="tuner-station-name"></div>
+  <!-- Blurred background album art -->
+  <div id="bg-art"></div>
+
+  <!-- Compact top bar -->
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <span class="top-freq" id="top-freq">98.1</span><span class="top-freq-unit">FM</span>
+      <span class="top-dot">&middot;</span>
+      <span class="top-station-name hidden" id="top-station-name"></span>
     </div>
+    <div class="on-air" id="on-air">
+      <span>ON AIR</span>
+      <span class="on-air-dot"></span>
+    </div>
+  </div>
+
+  <!-- Tuner dial -->
+  <div class="tuner-panel" id="tuner-panel">
     <div class="dial-band-wrapper" id="dial-band-wrapper">
       <canvas class="dial-canvas" id="dial-canvas"></canvas>
       <div class="tuner-needle" id="tuner-needle"></div>
@@ -314,11 +362,27 @@
     <div class="signal-meter" id="signal-meter"></div>
   </div>
 
+  <!-- Main display: visualizer + overlay states -->
   <div class="radio-display" id="display">
-    <div class="pick-station">
+    <canvas id="visualizer"></canvas>
+    <div class="overlay-state" id="overlay">
       <div class="pick-station-icon">&#9685;</div>
       <div class="pick-station-text">Tune the dial to find a station</div>
       <div class="pick-station-sub">Drag the slider or use arrow keys</div>
+    </div>
+  </div>
+
+  <!-- Compact bottom bar -->
+  <div class="bottom-bar" id="bottom-bar">
+    <div class="bottom-song-info">
+      <span class="bottom-note" id="bottom-note">&#9835;</span>
+      <span class="bottom-song-text" id="bottom-song-text"></span>
+    </div>
+    <div class="volume-controls">
+      <button class="vol-icon" id="vol-btn">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+      </button>
+      <input type="range" class="volume-slider" id="vol-slider" min="0" max="1" step="0.01">
     </div>
   </div>
 
@@ -382,6 +446,7 @@
     // ---- Web Audio Engine ----
     var audioCtx = null;
     var masterGain = null;
+    var analyserNode = null;
     var channelPool = [];        // { audio, source, gainNode, stationFreq, songs, songIndex }
 
     function initAudioEngine() {
@@ -390,7 +455,13 @@
 
       masterGain = audioCtx.createGain();
       masterGain.gain.value = volumeCurve(getSavedVolume());
-      masterGain.connect(audioCtx.destination);
+
+      analyserNode = audioCtx.createAnalyser();
+      analyserNode.fftSize = 256;
+      analyserNode.smoothingTimeConstant = 0.8;
+
+      masterGain.connect(analyserNode);
+      analyserNode.connect(audioCtx.destination);
 
       // Create channel pool — each with its own Audio element + gain node
       for (let i = 0; i < POOL_SIZE; i++) {
@@ -551,6 +622,8 @@
 
     // ---- Display ----
 
+    var visualizerRunning = false;
+
     function updateDisplayIfNeeded() {
       // Find nearest station within display range
       let nearest = null;
@@ -560,11 +633,13 @@
         if (d < minDist) { minDist = d; nearest = s; }
       }
 
-      const stationNameEl = document.getElementById("tuner-station-name");
+      const stationNameEl = document.getElementById("top-station-name");
+      const onAirEl = document.getElementById("on-air");
 
       if (nearest && minDist < DISPLAY_RANGE) {
         stationNameEl.textContent = nearest.name;
         stationNameEl.classList.remove("hidden");
+        onAirEl.classList.add("visible");
 
         // Find the channel playing this station
         const ch = channelPool.find(c => c.stationFreq === nearest.freq);
@@ -577,19 +652,20 @@
           renderNowPlaying(song, nearest);
         }
 
-        // Opacity tracks signal strength
-        const t = minDist / DISPLAY_RANGE;
-        const opacity = Math.cos(t * Math.PI / 2);
-        document.getElementById("display").style.opacity = Math.max(0.15, opacity);
+        // Hide overlay when tuned to a station
+        document.getElementById("overlay").style.display = "none";
+
+        // Start visualizer
+        if (!visualizerRunning) startVisualizer();
       } else {
         stationNameEl.classList.add("hidden");
+        onAirEl.classList.remove("visible");
 
         if (displayedStationFreq !== null) {
           displayedStationFreq = null;
           displayedSongId = null;
           renderBetweenStations();
         }
-        document.getElementById("display").style.opacity = 1;
       }
 
       // Signal meter
@@ -615,58 +691,168 @@
     }
 
     function renderNowPlaying(song, station) {
-      const display = document.getElementById("display");
+      // Update bottom bar song info
+      const songText = document.getElementById("bottom-song-text");
+      songText.innerHTML = `<span class="bottom-title" data-testid="song-title">${esc(song.title)}</span><span class="bottom-sep">&mdash;</span><span class="bottom-artist" data-testid="song-artist">${esc(song.artist)}</span>`;
+      document.getElementById("bottom-note").classList.add("visible");
 
-      display.innerHTML = `
-        <div class="station-badge"><span>${station.freq}</span> FM - ${station.name}</div>
-        <div class="on-air"><span class="on-air-dot"></span>ON AIR</div>
-        <img class="album-art" src="${song.imageUrl}" alt="" onerror="this.src='${PLACEHOLDER}'">
-        <div class="song-title" data-testid="song-title">${esc(song.title)}</div>
-        <div class="song-artist" data-testid="song-artist">${esc(song.artist)}</div>
-        <div class="volume-controls">
-          <button class="vol-icon" id="vol-btn">
-            <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-          </button>
-          <input type="range" class="volume-slider" id="vol-slider" min="0" max="1" step="0.01" value="${getSavedVolume()}">
-        </div>
-      `;
-
-      document.getElementById("vol-slider").addEventListener("input", e => {
-        const val = parseFloat(e.target.value);
-        if (masterGain) masterGain.gain.setTargetAtTime(volumeCurve(val), audioCtx.currentTime, 0.02);
-        saveVolume(val);
-      });
-
-      document.getElementById("vol-btn").addEventListener("click", () => {
-        const slider = document.getElementById("vol-slider");
-        if (masterGain.gain.value > 0.01) {
-          // Mute — don't save 0 so reload doesn't start muted
-          masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
-          slider.value = 0;
-        } else {
-          // Unmute — restore saved volume
-          const restored = getSavedVolume();
-          masterGain.gain.setTargetAtTime(volumeCurve(restored), audioCtx.currentTime, 0.02);
-          slider.value = restored;
-        }
-      });
+      // Update background art
+      const bgArt = document.getElementById("bg-art");
+      bgArt.style.backgroundImage = `url(${song.imageUrl})`;
+      bgArt.classList.add("visible");
     }
 
     function renderBetweenStations() {
-      document.getElementById("display").innerHTML = `
-        <div class="between-stations">
-          <div class="between-stations-text">Between stations</div>
-        </div>
-      `;
+      // Clear bottom bar song info
+      document.getElementById("bottom-song-text").innerHTML = "";
+      document.getElementById("bottom-note").classList.remove("visible");
+
+      // Show between-stations overlay
+      const overlay = document.getElementById("overlay");
+      overlay.style.display = "flex";
+      overlay.innerHTML = `<div class="between-stations-text">Between stations</div>`;
+
+      // Fade background
+      document.getElementById("bg-art").classList.remove("visible");
     }
 
     function renderLoading() {
-      document.getElementById("display").innerHTML = `
-        <div class="tuning">
-          <div class="tuning-text">LOADING STATIONS</div>
-          <div class="tuning-spinner"></div>
-        </div>
+      const overlay = document.getElementById("overlay");
+      overlay.style.display = "flex";
+      overlay.innerHTML = `
+        <div class="tuning-text">LOADING STATIONS</div>
+        <div class="tuning-spinner"></div>
       `;
+    }
+
+    // ---- Visualizer ----
+
+    function startVisualizer() {
+      if (visualizerRunning) return;
+      visualizerRunning = true;
+
+      const canvas = document.getElementById("visualizer");
+      const ctx = canvas.getContext("2d");
+      const bgArt = document.getElementById("bg-art");
+
+      // Peak hold state — one per mirrored bar index
+      let peaks = null;       // Float32Array of peak heights (0–1)
+      let peakVel = null;     // Float32Array of fall velocity
+      const PEAK_HOLD = 18;   // frames to hold before falling
+      const PEAK_GRAVITY = 0.0012; // acceleration per frame
+      let peakHold = null;    // Uint16Array countdown timers
+
+      function draw() {
+        if (!visualizerRunning) return;
+        requestAnimationFrame(draw);
+
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = rect.width;
+        const h = rect.height;
+
+        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+          canvas.width = w * dpr;
+          canvas.height = h * dpr;
+          canvas.style.width = w + "px";
+          canvas.style.height = h + "px";
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        if (!analyserNode) return;
+
+        const bufLen = analyserNode.frequencyBinCount;
+        const data = new Uint8Array(bufLen);
+        analyserNode.getByteFrequencyData(data);
+
+        const half = Math.floor(bufLen / 2);
+        const totalBars = half * 2;
+        const gap = 1.5;
+        const barWidth = Math.max(2, w / totalBars - gap);
+        const step = w / totalBars;
+        const maxBarHeight = h * 0.92;
+
+        // Init peak arrays on first run or if size changed
+        if (!peaks || peaks.length !== half) {
+          peaks = new Float32Array(half);
+          peakVel = new Float32Array(half);
+          peakHold = new Uint16Array(half);
+        }
+
+        // --- Bass pulse: average of bins 0–5 drives background brightness ---
+        let bassSum = 0;
+        for (let i = 0; i < 6; i++) bassSum += data[i];
+        const bassLevel = bassSum / (6 * 255);
+        const bgOpacity = 0.10 + bassLevel * 0.20; // 0.10 – 0.30
+        bgArt.style.opacity = bgArt.classList.contains("visible") ? bgOpacity : 0;
+
+        // --- Draw bars with glow ---
+        ctx.save();
+        ctx.shadowBlur = 12;
+
+        for (let i = 0; i < half; i++) {
+          const val = data[i] / 255;
+          const barH = val * maxBarHeight;
+
+          // Edge fade
+          const edgeFade = Math.min(1, (i / half) * 4, ((half - 1 - i) / half) * 4);
+          const alpha = (val * 0.85 + 0.08) * edgeFade;
+
+          // Color: orange → amber → hot white at peaks
+          const r = 255;
+          const g = Math.round(79 + (200 - 79) * (1 - val));
+          const b = Math.round(val > 0.8 ? (val - 0.8) * 5 * 60 : 0);
+          const color = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+          ctx.fillStyle = color;
+          ctx.shadowColor = `rgba(255, 79, 0, ${alpha * 0.6})`;
+
+          // Right half
+          const xRight = w / 2 + i * step;
+          ctx.fillRect(xRight, h - barH, barWidth, barH);
+
+          // Left half (mirrored)
+          const xLeft = w / 2 - (i + 1) * step;
+          ctx.fillRect(xLeft, h - barH, barWidth, barH);
+
+          // --- Peak hold logic ---
+          if (val >= peaks[i]) {
+            peaks[i] = val;
+            peakVel[i] = 0;
+            peakHold[i] = PEAK_HOLD;
+          } else {
+            if (peakHold[i] > 0) {
+              peakHold[i]--;
+            } else {
+              peakVel[i] += PEAK_GRAVITY;
+              peaks[i] -= peakVel[i];
+              if (peaks[i] < 0) peaks[i] = 0;
+            }
+          }
+
+          // Draw peak dots
+          const peakY = h - peaks[i] * maxBarHeight;
+          const peakAlpha = edgeFade * (0.5 + peaks[i] * 0.5);
+          ctx.shadowColor = "transparent";
+          ctx.fillStyle = `rgba(255, 200, 80, ${peakAlpha})`;
+          ctx.fillRect(xRight, peakY - 2, barWidth, 2);
+          ctx.fillRect(xLeft, peakY - 2, barWidth, 2);
+          ctx.shadowColor = `rgba(255, 79, 0, ${alpha * 0.6})`;
+        }
+
+        ctx.restore();
+
+        // Glow line at base
+        const grad = ctx.createLinearGradient(0, h - 3, 0, h);
+        grad.addColorStop(0, `rgba(255, 79, 0, ${0.2 + bassLevel * 0.3})`);
+        grad.addColorStop(1, "rgba(255, 79, 0, 0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, h - 3, w, 3);
+      }
+
+      draw();
     }
 
     // ---- Frequency Change ----
@@ -674,7 +860,7 @@
     function onFrequencyChange(newFreq) {
       currentFreq = newFreq;
 
-      document.getElementById("tuner-freq-num").textContent = newFreq.toFixed(1);
+      document.getElementById("top-freq").textContent = newFreq.toFixed(1);
       updateNeedlePosition();
 
       if (started) {
@@ -925,6 +1111,29 @@
 
     // ---- Boot ----
 
+    function setupVolumeControls() {
+      const slider = document.getElementById("vol-slider");
+      slider.value = getSavedVolume();
+
+      slider.addEventListener("input", e => {
+        const val = parseFloat(e.target.value);
+        if (masterGain) masterGain.gain.setTargetAtTime(volumeCurve(val), audioCtx.currentTime, 0.02);
+        saveVolume(val);
+      });
+
+      document.getElementById("vol-btn").addEventListener("click", () => {
+        if (!masterGain) return;
+        if (masterGain.gain.value > 0.01) {
+          masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+          slider.value = 0;
+        } else {
+          const restored = getSavedVolume();
+          masterGain.gain.setTargetAtTime(volumeCurve(restored), audioCtx.currentTime, 0.02);
+          slider.value = restored;
+        }
+      });
+    }
+
     async function init() {
       renderLoading();
       const res = await fetch("/api/stations");
@@ -932,20 +1141,20 @@
       drawDial();
       updateNeedlePosition();
       setupTunerInput();
+      setupVolumeControls();
 
       // Show initial prompt
-      document.getElementById("display").innerHTML = `
-        <div class="pick-station">
-          <div class="pick-station-icon">&#9685;</div>
-          <div class="pick-station-text">Tune the dial to find a station</div>
-          <div class="pick-station-sub">Drag the slider or use arrow keys</div>
-        </div>
+      const overlay = document.getElementById("overlay");
+      overlay.style.display = "flex";
+      overlay.innerHTML = `
+        <div class="pick-station-icon">&#9685;</div>
+        <div class="pick-station-text">Tune the dial to find a station</div>
+        <div class="pick-station-sub">Drag the slider or use arrow keys</div>
       `;
 
       // Pre-fetch all station data, then preload album art for current schedule
       prefetchAllStations().then(() => {
         preloadAlbumArt();
-        // Re-preload every 30s as songs rotate through the schedule
         setInterval(preloadAlbumArt, 30_000);
       });
 
@@ -954,7 +1163,6 @@
         updateNeedlePosition();
       });
 
-      // Connect WebSocket for multi-user presence
       connectWebSocket();
     }
 

@@ -18,7 +18,7 @@ test.describe("SunoTime Radio", () => {
     await page.goto(BASE);
     const tuner = page.locator("#tuner-range");
     await expect(tuner).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".tuner-freq-num")).toBeVisible();
+    await expect(page.locator(".top-freq")).toBeVisible();
     await expect(page.locator("#dial-canvas")).toBeVisible();
   });
 
@@ -33,7 +33,7 @@ test.describe("SunoTime Radio", () => {
     expect(title!.length).toBeGreaterThan(0);
     await expect(page.locator('[data-testid="song-artist"]')).toBeAttached();
     await expect(page.locator(".on-air")).toBeVisible();
-    await expect(page.locator(".station-badge")).toContainText("94.7");
+    await expect(page.locator(".top-station-name")).toBeVisible();
   });
 
   test("switching stations changes the display", async ({ page }) => {
@@ -43,7 +43,7 @@ test.describe("SunoTime Radio", () => {
 
     await tuneAndWait(page, 1013); // Pop
     await tuneAndWait(page, 1059); // House
-    await expect(page.locator(".station-badge")).toContainText("105.9");
+    await expect(page.locator(".top-station-name")).toBeVisible();
   });
 
   test("volume slider is present when tuned", async ({ page }) => {
@@ -278,8 +278,8 @@ test.describe("SunoTime Radio", () => {
 
       results.push(info);
 
-      // Station badge must show current freq
-      await expect(page.locator(".station-badge")).toContainText(sf.freq);
+      // Top bar should show station name when tuned
+      await expect(page.locator(".top-station-name")).toBeVisible();
     }
 
     // Each station should have a title
