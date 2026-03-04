@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>SunoTime Radio</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,6 +12,7 @@
       background: #0a0a0f;
       color: #e0e0e0;
       height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -179,6 +180,7 @@
       z-index: 1;
       min-height: 0;
       transition: opacity 0.3s;
+      overflow: hidden;
     }
 
     #bg-shader {
@@ -564,6 +566,55 @@
     }
     .dev-param-track input[type="checkbox"] {
       accent-color: #ff4f00;
+    }
+    /* --- Mobile: tablets and phones --- */
+    @media (max-width: 768px) {
+      * { -webkit-tap-highlight-color: transparent; }
+      body { overscroll-behavior: none; }
+
+      .top-bar {
+        padding: 6px 12px;
+        padding-left: calc(12px + env(safe-area-inset-left));
+        padding-right: calc(12px + env(safe-area-inset-right));
+      }
+
+      .tuner-panel { padding: 6px 12px 4px; }
+      .dial-band-wrapper { height: 72px; margin: 0 -12px; }
+      .dial-canvas { height: 72px; }
+
+      .bottom-bar {
+        padding: 8px 12px;
+        padding-bottom: calc(8px + env(safe-area-inset-bottom));
+        padding-left: calc(12px + env(safe-area-inset-left));
+        padding-right: calc(12px + env(safe-area-inset-right));
+      }
+
+      .volume-slider {
+        width: 80px;
+        height: 6px;
+      }
+      .volume-slider::-webkit-slider-thumb {
+        width: 22px;
+        height: 22px;
+      }
+      .vol-icon svg { width: 22px; height: 22px; }
+
+      .chat-sidebar { width: 100%; }
+      .chat-toggle { padding: 10px 12px; }
+
+      .dev-menu { display: none !important; }
+    }
+
+    /* --- Mobile: small phones --- */
+    @media (max-width: 480px) {
+      .top-bar { padding: 4px 10px; }
+      .top-freq { font-size: 16px; }
+
+      .dial-band-wrapper { height: 80px; }
+      .dial-canvas { height: 80px; }
+
+      .bottom-bar { flex-wrap: wrap; }
+      .bottom-song-info { width: 100%; }
     }
   </style>
 </head>
@@ -2508,15 +2559,24 @@
       const wrapper = document.getElementById("dial-band-wrapper");
       const canvas = document.getElementById("dial-canvas");
       const width = wrapper.offsetWidth;
+      const height = wrapper.offsetHeight;
       const pxPerMHz = width / FREQ_SPAN;
       const dpr = window.devicePixelRatio || 1;
 
       canvas.width = width * dpr;
-      canvas.height = 56 * dpr;
+      canvas.height = height * dpr;
       canvas.style.width = width + "px";
 
       const ctx = canvas.getContext("2d");
       ctx.scale(dpr, dpr);
+
+      // Extra space beyond 56px baseline is added below the ticks
+      const extra = height - 56;
+      const stationLabelY = 8;
+      const stationDotY = 14;
+      const tickLabelY = 32 + extra * 0.3;
+      const tickTopY = 36 + extra * 0.4;
+      const miniTickTopY = 44 + extra * 0.6;
 
       // Tick marks
       for (let f = 88; f <= 108; f++) {
@@ -2525,14 +2585,14 @@
         ctx.strokeStyle = "#333";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x, 36);
-        ctx.lineTo(x, 56);
+        ctx.moveTo(x, tickTopY);
+        ctx.lineTo(x, height);
         ctx.stroke();
 
         ctx.fillStyle = "#444";
         ctx.font = "10px -apple-system, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(f.toString(), x, 32);
+        ctx.fillText(f.toString(), x, tickLabelY);
 
         for (let m = 0.2; m < 1; m += 0.2) {
           if (f + m > FREQ_MAX) break;
@@ -2540,8 +2600,8 @@
           ctx.strokeStyle = "#222";
           ctx.lineWidth = 0.5;
           ctx.beginPath();
-          ctx.moveTo(mx, 44);
-          ctx.lineTo(mx, 56);
+          ctx.moveTo(mx, miniTickTopY);
+          ctx.lineTo(mx, height);
           ctx.stroke();
         }
       }
@@ -2553,17 +2613,16 @@
 
         ctx.fillStyle = "#ff4f00";
         ctx.beginPath();
-        ctx.arc(x, 14, 3, 0, Math.PI * 2);
+        ctx.arc(x, stationDotY, 3, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = "#555";
         ctx.font = "8px -apple-system, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(s.name, x, 8);
+        ctx.fillText(s.name, x, stationLabelY);
       }
 
       // Other users' presence markers
-      var height = 56;
       for (var uid in otherUsers) {
         var u = otherUsers[uid];
         var ux = (u.freq - FREQ_MIN) * pxPerMHz;
@@ -2625,6 +2684,31 @@
           onFrequencyChange(newVal);
         }
       });
+
+      // Touch swipe on dial for station hopping
+      const dialWrapper = document.getElementById("dial-band-wrapper");
+      let touchStartX = null;
+      dialWrapper.addEventListener("touchstart", (e) => {
+        touchStartX = e.touches[0].clientX;
+      }, { passive: true });
+      dialWrapper.addEventListener("touchend", (e) => {
+        if (touchStartX === null) return;
+        const dx = e.changedTouches[0].clientX - touchStartX;
+        touchStartX = null;
+        if (Math.abs(dx) < 60) return;
+
+        // Find current station index
+        const curFreq = Math.round(currentFreq * 10);
+        let idx = stations.findIndex(s => Math.round(parseFloat(s.freq) * 10) === curFreq);
+        if (idx === -1) return; // only jump when on a station
+
+        ensureAudio();
+        const dir = dx > 0 ? -1 : 1; // swipe right = lower freq (prev), swipe left = higher freq (next)
+        idx = Math.max(0, Math.min(stations.length - 1, idx + dir));
+        const newFreq = parseFloat(stations[idx].freq);
+        slider.value = Math.round(newFreq * 10);
+        onFrequencyChange(newFreq);
+      }, { passive: true });
     }
 
     // ---- Helpers ----
