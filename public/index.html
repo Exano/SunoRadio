@@ -458,6 +458,65 @@
       from { transform: translateX(0); }
       to { transform: translateX(-100%); }
     }
+    /* --- Dev Menu --- */
+    .dev-menu {
+      position: fixed;
+      bottom: 52px;
+      left: 12px;
+      z-index: 100;
+      background: rgba(10, 10, 18, 0.92);
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 11px;
+      max-width: 200px;
+      backdrop-filter: blur(8px);
+    }
+    .dev-menu.visible { display: flex; }
+    .dev-menu-title {
+      color: #ff4f00;
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .dev-menu-section {
+      color: #666;
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .dev-menu button {
+      background: rgba(255, 255, 255, 0.06);
+      color: #ccc;
+      border: 1px solid #2a2a35;
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .dev-menu button:hover {
+      background: rgba(255, 79, 0, 0.15);
+      border-color: #ff4f00;
+      color: #fff;
+    }
+    .dev-menu button.active-fx {
+      border-color: #ff4f00;
+      color: #ff4f00;
+    }
+    .dev-menu-row {
+      display: flex;
+      gap: 4px;
+    }
+    .dev-menu-row button { flex: 1; }
   </style>
 </head>
 <body>
@@ -526,6 +585,51 @@
     </div>
   </div>
 
+  <!-- Dev menu for testing effects (Ctrl+Shift+D to toggle) -->
+  <div class="dev-menu" id="dev-menu">
+    <div class="dev-menu-title">FX Dev Menu</div>
+    <div class="dev-menu-section">Mode</div>
+    <div class="dev-menu-row">
+      <button data-fx="bars">Bars</button>
+      <button data-fx="scope">Scope</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-fx="circle">Circle</button>
+      <button data-fx="blocks">Blocks</button>
+    </div>
+    <div class="dev-menu-section">Visualizer (30s)</div>
+    <div class="dev-menu-row">
+      <button data-fx="disco">Disco</button>
+      <button data-fx="matrix">Matrix</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-fx="vaporwave">Vaporwave</button>
+      <button data-fx="party">Party</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-fx="chill">Chill</button>
+      <button data-fx="rain">Rain</button>
+    </div>
+    <div class="dev-menu-section">Overlays</div>
+    <div class="dev-menu-row">
+      <button data-fx="discoball">Disco Ball</button>
+      <button data-fx="confetti">Confetti</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-fx="fire">Fire</button>
+      <button data-fx="snow">Snow</button>
+    </div>
+    <div class="dev-menu-row">
+      <button data-fx="earthquake">Quake</button>
+    </div>
+    <div class="dev-menu-section">Station</div>
+    <div class="dev-menu-row">
+      <button data-fx="previouschannel">Prev</button>
+      <button data-fx="nextchannel">Next</button>
+    </div>
+    <button data-fx="reset">Reset</button>
+  </div>
+
   <script>
     // ---- Constants ----
     const RECEPTION_RANGE = 0.5;  // MHz — how far from center a station is audible
@@ -576,6 +680,239 @@
     var displayedSongId = null;
     var started = false;         // Has user interacted yet?
     var preloadedImages = {};    // url → Image, prevents GC + deduplicates
+
+    // ---- Visualizer Effects State ----
+    var visualizerFx = {
+      colorMode: 'default',   // 'default','disco','matrix','vaporwave','chill'
+      intensity: 1.0,         // bar height multiplier
+      glowMultiplier: 1.0,    // shadowBlur multiplier
+      rain: false,            // flip bar direction (top-down)
+      hueOffset: 0,           // for disco rotation (incremented per frame)
+      timer: null,            // setTimeout id for auto-expire
+      mode: 'bars'            // 'bars' | 'scope' | 'circle' | 'blocks'
+    };
+
+    var overlayEffects = [];  // active overlay animations
+
+    function addOverlay(id, duration, initFn) {
+      for (var i = overlayEffects.length - 1; i >= 0; i--) {
+        if (overlayEffects[i].id === id) overlayEffects.splice(i, 1);
+      }
+      var ov = { id: id, startTime: Date.now(), duration: duration };
+      initFn(ov);
+      overlayEffects.push(ov);
+    }
+
+    function createDiscoBall() {
+      addOverlay('discoball', 8, function(ov) {
+        ov.ballY = -0.05;
+        ov.ballAngle = 0;
+        ov.dots = [];
+        for (var i = 0; i < 30; i++) {
+          ov.dots.push({
+            x: Math.random(), y: Math.random(),
+            size: 2 + Math.random() * 4,
+            speed: 0.2 + Math.random() * 0.5,
+            phase: Math.random() * Math.PI * 2,
+            alpha: Math.random()
+          });
+        }
+        ov.update = function(dt, elapsed) {
+          ov.ballAngle += dt * 2;
+          if (elapsed < 0.5) {
+            ov.ballY = -0.05 + 0.23 * (elapsed / 0.5);
+          } else {
+            ov.ballY = 0.18;
+          }
+          for (var i = 0; i < ov.dots.length; i++) {
+            var d = ov.dots[i];
+            d.phase += dt * d.speed * 3;
+            d.x += Math.sin(d.phase) * 0.003;
+            d.y += Math.cos(d.phase * 0.7) * 0.002;
+            if (d.x < 0) d.x += 1; if (d.x > 1) d.x -= 1;
+            if (d.y < 0) d.y += 1; if (d.y > 1) d.y -= 1;
+            d.alpha = 0.3 + 0.7 * Math.abs(Math.sin(d.phase));
+          }
+        };
+        ov.render = function(ctx, w, h) {
+          var elapsed = (Date.now() - ov.startTime) / 1000;
+          var fade = elapsed > ov.duration - 1 ? ov.duration - elapsed : 1;
+          var bx = w / 2, by = ov.ballY * h;
+          var radius = Math.min(w, h) * 0.06;
+          ctx.save();
+          ctx.globalAlpha = fade;
+          ctx.strokeStyle = '#888';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, by); ctx.stroke();
+          var grad = ctx.createRadialGradient(bx - radius * 0.3, by - radius * 0.3, radius * 0.1, bx, by, radius);
+          grad.addColorStop(0, 'rgba(220,220,240,0.9)');
+          grad.addColorStop(0.5, 'rgba(180,180,200,0.7)');
+          grad.addColorStop(1, 'rgba(100,100,120,0.5)');
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(bx, by, radius, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 0.5;
+          for (var r = -2; r <= 2; r++) {
+            var ly = by + r * radius * 0.35;
+            var halfW = Math.sqrt(Math.max(0, radius * radius - (ly - by) * (ly - by)));
+            ctx.beginPath(); ctx.moveTo(bx - halfW, ly); ctx.lineTo(bx + halfW, ly); ctx.stroke();
+          }
+          for (var a = 0; a < 6; a++) {
+            var angle = ov.ballAngle + a * Math.PI / 3;
+            var lx = bx + Math.sin(angle) * radius;
+            ctx.beginPath(); ctx.moveTo(lx, by - radius); ctx.lineTo(lx, by + radius); ctx.stroke();
+          }
+          for (var i = 0; i < ov.dots.length; i++) {
+            var d = ov.dots[i];
+            ctx.globalAlpha = d.alpha * fade;
+            var hue = (i * 37 + Date.now() * 0.1) % 360;
+            ctx.fillStyle = 'hsl(' + hue + ', 80%, 75%)';
+            ctx.beginPath(); ctx.arc(d.x * w, d.y * h, d.size, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+        };
+      });
+    }
+
+    function createConfetti() {
+      addOverlay('confetti', 6, function(ov) {
+        ov.particles = [];
+        var colors = ['#ff3b3b','#ffdd3b','#3bff6e','#3bb8ff','#ff3bea','#ff8c3b','#3bffe0','#ff6b9d'];
+        for (var i = 0; i < 80; i++) {
+          var angle = Math.random() * Math.PI * 2;
+          var speed = 2 + Math.random() * 5;
+          ov.particles.push({
+            x: 0.5, y: 0.5,
+            vx: Math.cos(angle) * speed * 0.01,
+            vy: Math.sin(angle) * speed * 0.01 - 0.02,
+            rot: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 10,
+            w: 4 + Math.random() * 6,
+            h: 3 + Math.random() * 4,
+            color: colors[Math.floor(Math.random() * colors.length)]
+          });
+        }
+        ov.update = function(dt) {
+          for (var i = 0; i < ov.particles.length; i++) {
+            var p = ov.particles[i];
+            p.vy += 0.0008;
+            p.vx *= 0.99;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.rot += p.rotSpeed * dt;
+          }
+        };
+        ov.render = function(ctx, w, h) {
+          var elapsed = (Date.now() - ov.startTime) / 1000;
+          var fade = elapsed > ov.duration - 1 ? ov.duration - elapsed : 1;
+          ctx.save();
+          ctx.globalAlpha = fade;
+          for (var i = 0; i < ov.particles.length; i++) {
+            var p = ov.particles[i];
+            if (p.y > 1.2) continue;
+            ctx.save();
+            ctx.translate(p.x * w, p.y * h);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+          }
+          ctx.restore();
+        };
+      });
+    }
+
+    function createFire() {
+      addOverlay('fire', 8, function(ov) {
+        ov.particles = [];
+        ov.spawnTimer = 0;
+        ov.update = function(dt, elapsed) {
+          ov.spawnTimer += dt;
+          while (ov.spawnTimer > 0.02 && elapsed < ov.duration - 1) {
+            ov.spawnTimer -= 0.02;
+            ov.particles.push({
+              x: 0.2 + Math.random() * 0.6,
+              y: 1.0,
+              vx: (Math.random() - 0.5) * 0.003,
+              vy: -(0.005 + Math.random() * 0.008),
+              life: 1.0,
+              decay: 0.8 + Math.random() * 0.8,
+              size: 3 + Math.random() * 5
+            });
+          }
+          for (var i = ov.particles.length - 1; i >= 0; i--) {
+            var p = ov.particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vx += (Math.random() - 0.5) * 0.001;
+            p.life -= p.decay * dt;
+            if (p.life <= 0) ov.particles.splice(i, 1);
+          }
+        };
+        ov.render = function(ctx, w, h) {
+          ctx.save();
+          for (var i = 0; i < ov.particles.length; i++) {
+            var p = ov.particles[i];
+            var r = 255;
+            var g = Math.round(100 + p.life * 155);
+            var b = Math.round(p.life > 0.5 ? p.life * 40 : 0);
+            ctx.globalAlpha = p.life * 0.7;
+            ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+            ctx.beginPath();
+            ctx.arc(p.x * w, p.y * h, p.size * p.life, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        };
+      });
+    }
+
+    function createSnow() {
+      addOverlay('snow', 10, function(ov) {
+        ov.flakes = [];
+        for (var i = 0; i < 60; i++) {
+          ov.flakes.push({
+            x: Math.random(),
+            y: -Math.random(),
+            size: 1.5 + Math.random() * 3,
+            speed: 0.001 + Math.random() * 0.002,
+            phase: Math.random() * Math.PI * 2,
+            swaySpeed: 1 + Math.random() * 2
+          });
+        }
+        ov.update = function(dt) {
+          for (var i = 0; i < ov.flakes.length; i++) {
+            var f = ov.flakes[i];
+            f.y += f.speed;
+            f.phase += f.swaySpeed * dt;
+            f.x += Math.sin(f.phase) * 0.001;
+            if (f.y > 1.1) { f.y = -0.05; f.x = Math.random(); }
+          }
+        };
+        ov.render = function(ctx, w, h) {
+          var elapsed = (Date.now() - ov.startTime) / 1000;
+          var fade = elapsed > ov.duration - 1.5 ? (ov.duration - elapsed) / 1.5 : 1;
+          if (elapsed < 1) fade *= elapsed;
+          ctx.save();
+          ctx.fillStyle = '#fff';
+          for (var i = 0; i < ov.flakes.length; i++) {
+            var f = ov.flakes[i];
+            ctx.globalAlpha = fade * 0.8;
+            ctx.beginPath();
+            ctx.arc(f.x * w, f.y * h, f.size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        };
+      });
+    }
+
+    function createEarthquake() {
+      addOverlay('earthquake', 3, function(ov) {
+        ov.update = function() {};
+        ov.render = function() {};
+      });
+    }
 
     // ---- Presence State ----
     var otherUsers = {};         // id → { freq, color }
@@ -876,88 +1213,99 @@
       const bgArt = document.getElementById("bg-art");
 
       // Peak hold state — one per mirrored bar index
-      let peaks = null;       // Float32Array of peak heights (0–1)
-      let peakVel = null;     // Float32Array of fall velocity
-      const PEAK_HOLD = 18;   // frames to hold before falling
-      const PEAK_GRAVITY = 0.0012; // acceleration per frame
-      let peakHold = null;    // Uint16Array countdown timers
+      let peaks = null;
+      let peakVel = null;
+      const PEAK_HOLD = 18;
+      const PEAK_GRAVITY = 0.0012;
+      let peakHold = null;
+      var lastFrameTime = Date.now();
 
-      function draw() {
-        if (!visualizerRunning) return;
-        requestAnimationFrame(draw);
-
-        const rect = canvas.parentElement.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = rect.width;
-        const h = rect.height;
-
-        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-          canvas.width = w * dpr;
-          canvas.height = h * dpr;
-          canvas.style.width = w + "px";
-          canvas.style.height = h + "px";
+      function getBarColor(val, index, total) {
+        var cm = visualizerFx.colorMode;
+        var edgeFade = Math.min(1, (index / total) * 4, ((total - 1 - index) / total) * 4);
+        var alpha = (val * 0.85 + 0.08) * edgeFade;
+        var color, glowColor, peakColor;
+        if (cm === 'disco') {
+          var hue = (visualizerFx.hueOffset + index * 3) % 360;
+          color = 'hsla(' + hue + ', 85%, 55%, ' + alpha + ')';
+          glowColor = 'hsla(' + hue + ', 85%, 55%, ' + (alpha * 0.6) + ')';
+          peakColor = 'hsla(' + ((hue + 30) % 360) + ', 80%, 70%, ';
+        } else if (cm === 'matrix') {
+          var gr = Math.round(160 + val * 95);
+          var bl = Math.round(val * 65);
+          color = 'rgba(0, ' + gr + ', ' + bl + ', ' + alpha + ')';
+          glowColor = 'rgba(0, 255, 65, ' + (alpha * 0.6) + ')';
+          peakColor = 'rgba(0, 255, 100, ';
+        } else if (cm === 'vaporwave') {
+          var t = index / Math.max(1, total - 1);
+          var r = Math.round(255 * (1 - t));
+          var g = Math.round(50 + (220 - 50) * t);
+          var b = Math.round(200 + (255 - 200) * t);
+          color = 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+          glowColor = 'rgba(180, 0, 255, ' + (alpha * 0.6) + ')';
+          peakColor = 'rgba(200, 100, 255, ';
+        } else if (cm === 'chill') {
+          var rc = Math.round(80 + val * 80);
+          var gc = Math.round(130 + val * 60);
+          color = 'rgba(' + rc + ', ' + gc + ', 255, ' + alpha + ')';
+          glowColor = 'rgba(80, 130, 255, ' + (alpha * 0.6) + ')';
+          peakColor = 'rgba(150, 200, 255, ';
+        } else {
+          var rd = 255;
+          var gd = Math.round(79 + (200 - 79) * (1 - val));
+          var bd = Math.round(val > 0.8 ? (val - 0.8) * 5 * 60 : 0);
+          color = 'rgba(' + rd + ', ' + gd + ', ' + bd + ', ' + alpha + ')';
+          glowColor = 'rgba(255, 79, 0, ' + (alpha * 0.6) + ')';
+          peakColor = 'rgba(255, 200, 80, ';
         }
+        return { color: color, glowColor: glowColor, peakColor: peakColor, alpha: alpha, edgeFade: edgeFade };
+      }
 
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, w, h);
+      function getStrokeColor(val) {
+        var cm = visualizerFx.colorMode;
+        if (cm === 'disco') return 'hsl(' + visualizerFx.hueOffset + ', 85%, 55%)';
+        if (cm === 'matrix') return 'rgb(0, ' + Math.round(160 + val * 95) + ', ' + Math.round(val * 65) + ')';
+        if (cm === 'vaporwave') return 'rgb(200, 100, 255)';
+        if (cm === 'chill') return 'rgb(100, 160, 255)';
+        return 'rgb(255, ' + Math.round(79 + (200 - 79) * (1 - val)) + ', 0)';
+      }
 
-        if (!analyserNode) return;
+      function drawBars(data, w, h) {
+        var half = Math.floor(data.length / 2);
+        var totalBars = half * 2;
+        var gap = 1.5;
+        var barWidth = Math.max(2, w / totalBars - gap);
+        var step = w / totalBars;
+        var maxBarHeight = h * 0.92;
 
-        const bufLen = analyserNode.frequencyBinCount;
-        const data = new Uint8Array(bufLen);
-        analyserNode.getByteFrequencyData(data);
-
-        const half = Math.floor(bufLen / 2);
-        const totalBars = half * 2;
-        const gap = 1.5;
-        const barWidth = Math.max(2, w / totalBars - gap);
-        const step = w / totalBars;
-        const maxBarHeight = h * 0.92;
-
-        // Init peak arrays on first run or if size changed
         if (!peaks || peaks.length !== half) {
           peaks = new Float32Array(half);
           peakVel = new Float32Array(half);
           peakHold = new Uint16Array(half);
         }
 
-        // --- Bass pulse: average of bins 0–5 drives background brightness ---
-        let bassSum = 0;
-        for (let i = 0; i < 6; i++) bassSum += data[i];
-        const bassLevel = bassSum / (6 * 255);
-        const bgOpacity = 0.10 + bassLevel * 0.20; // 0.10 – 0.30
-        bgArt.style.opacity = bgArt.classList.contains("visible") ? bgOpacity : 0;
-
-        // --- Draw bars with glow ---
         ctx.save();
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 12 * visualizerFx.glowMultiplier;
 
-        for (let i = 0; i < half; i++) {
-          const val = data[i] / 255;
-          const barH = val * maxBarHeight;
+        for (var i = 0; i < half; i++) {
+          var val = data[i] / 255;
+          var barH = val * maxBarHeight * visualizerFx.intensity;
+          var bc = getBarColor(val, i, half);
 
-          // Edge fade
-          const edgeFade = Math.min(1, (i / half) * 4, ((half - 1 - i) / half) * 4);
-          const alpha = (val * 0.85 + 0.08) * edgeFade;
+          ctx.fillStyle = bc.color;
+          ctx.shadowColor = bc.glowColor;
 
-          // Color: orange → amber → hot white at peaks
-          const r = 255;
-          const g = Math.round(79 + (200 - 79) * (1 - val));
-          const b = Math.round(val > 0.8 ? (val - 0.8) * 5 * 60 : 0);
-          const color = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          var xRight = w / 2 + i * step;
+          var xLeft = w / 2 - (i + 1) * step;
 
-          ctx.fillStyle = color;
-          ctx.shadowColor = `rgba(255, 79, 0, ${alpha * 0.6})`;
+          if (visualizerFx.rain) {
+            ctx.fillRect(xRight, 0, barWidth, barH);
+            ctx.fillRect(xLeft, 0, barWidth, barH);
+          } else {
+            ctx.fillRect(xRight, h - barH, barWidth, barH);
+            ctx.fillRect(xLeft, h - barH, barWidth, barH);
+          }
 
-          // Right half
-          const xRight = w / 2 + i * step;
-          ctx.fillRect(xRight, h - barH, barWidth, barH);
-
-          // Left half (mirrored)
-          const xLeft = w / 2 - (i + 1) * step;
-          ctx.fillRect(xLeft, h - barH, barWidth, barH);
-
-          // --- Peak hold logic ---
           if (val >= peaks[i]) {
             peaks[i] = val;
             peakVel[i] = 0;
@@ -972,17 +1320,203 @@
             }
           }
 
-          // Draw peak dots
-          const peakY = h - peaks[i] * maxBarHeight;
-          const peakAlpha = edgeFade * (0.5 + peaks[i] * 0.5);
-          ctx.shadowColor = "transparent";
-          ctx.fillStyle = `rgba(255, 200, 80, ${peakAlpha})`;
-          ctx.fillRect(xRight, peakY - 2, barWidth, 2);
-          ctx.fillRect(xLeft, peakY - 2, barWidth, 2);
-          ctx.shadowColor = `rgba(255, 79, 0, ${alpha * 0.6})`;
+          var peakAlpha = bc.edgeFade * (0.5 + peaks[i] * 0.5);
+          ctx.shadowColor = 'transparent';
+          ctx.fillStyle = bc.peakColor + peakAlpha + ')';
+          if (visualizerFx.rain) {
+            var peakY = peaks[i] * maxBarHeight * visualizerFx.intensity;
+            ctx.fillRect(xRight, peakY, barWidth, 2);
+            ctx.fillRect(xLeft, peakY, barWidth, 2);
+          } else {
+            var peakY2 = h - peaks[i] * maxBarHeight * visualizerFx.intensity;
+            ctx.fillRect(xRight, peakY2 - 2, barWidth, 2);
+            ctx.fillRect(xLeft, peakY2 - 2, barWidth, 2);
+          }
+          ctx.shadowColor = bc.glowColor;
         }
 
         ctx.restore();
+      }
+
+      function drawScope(w, h) {
+        var timeData = new Uint8Array(analyserNode.frequencyBinCount);
+        analyserNode.getByteTimeDomainData(timeData);
+
+        var avgVal = 0;
+        for (var j = 0; j < timeData.length; j++) avgVal += Math.abs(timeData[j] - 128) / 128;
+        avgVal /= timeData.length;
+
+        ctx.save();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = getStrokeColor(avgVal);
+        ctx.shadowBlur = 15 * visualizerFx.glowMultiplier;
+        ctx.shadowColor = ctx.strokeStyle;
+
+        ctx.beginPath();
+        var sliceWidth = w / timeData.length;
+        for (var i = 0; i < timeData.length; i++) {
+          var v = (timeData[i] - 128) / 128;
+          var y = (h / 2) + v * (h / 2) * 0.8 * visualizerFx.intensity;
+          if (i === 0) ctx.moveTo(0, y);
+          else ctx.lineTo(i * sliceWidth, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawCircle(data, w, h) {
+        var half = Math.floor(data.length / 2);
+        var cx = w / 2, cy = h / 2;
+        var innerR = Math.min(w, h) * 0.15;
+        var maxLen = Math.min(w, h) * 0.3;
+
+        if (!peaks || peaks.length !== half) {
+          peaks = new Float32Array(half);
+          peakVel = new Float32Array(half);
+          peakHold = new Uint16Array(half);
+        }
+
+        var lineW = Math.max(1.5, (2 * Math.PI * innerR) / half - 1);
+
+        ctx.save();
+        ctx.shadowBlur = 10 * visualizerFx.glowMultiplier;
+        ctx.lineWidth = lineW;
+
+        for (var i = 0; i < half; i++) {
+          var val = data[i] / 255;
+          var angle = (i / half) * Math.PI * 2 - Math.PI / 2;
+          var barLen = val * maxLen * visualizerFx.intensity;
+          var bc = getBarColor(val, i, half);
+
+          var x1 = cx + Math.cos(angle) * innerR;
+          var y1 = cy + Math.sin(angle) * innerR;
+          var x2 = cx + Math.cos(angle) * (innerR + barLen);
+          var y2 = cy + Math.sin(angle) * (innerR + barLen);
+
+          ctx.strokeStyle = bc.color;
+          ctx.shadowColor = bc.glowColor;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+
+          if (val >= peaks[i]) {
+            peaks[i] = val;
+            peakVel[i] = 0;
+            peakHold[i] = PEAK_HOLD;
+          } else {
+            if (peakHold[i] > 0) peakHold[i]--;
+            else {
+              peakVel[i] += PEAK_GRAVITY;
+              peaks[i] -= peakVel[i];
+              if (peaks[i] < 0) peaks[i] = 0;
+            }
+          }
+
+          var peakDist = innerR + peaks[i] * maxLen * visualizerFx.intensity;
+          var px = cx + Math.cos(angle) * peakDist;
+          var py = cy + Math.sin(angle) * peakDist;
+          var peakAlpha = bc.edgeFade * (0.5 + peaks[i] * 0.5);
+          ctx.fillStyle = bc.peakColor + peakAlpha + ')';
+          ctx.shadowColor = 'transparent';
+          ctx.beginPath();
+          ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      function drawBlocks(data, w, h) {
+        var cols = 16, rows = 12;
+        var gapX = 2, gapY = 2;
+        var cellW = (w - (cols + 1) * gapX) / cols;
+        var cellH = (h - (rows + 1) * gapY) / rows;
+        var binsPerCol = Math.floor(data.length / 2 / cols);
+
+        ctx.save();
+        for (var col = 0; col < cols; col++) {
+          var sum = 0;
+          var startBin = col * binsPerCol;
+          for (var b = 0; b < binsPerCol; b++) sum += data[startBin + b];
+          var avg = sum / (binsPerCol * 255);
+          var filledRows = Math.round(avg * rows * visualizerFx.intensity);
+
+          for (var row = 0; row < rows; row++) {
+            var x = gapX + col * (cellW + gapX);
+            var y = gapY + (rows - 1 - row) * (cellH + gapY);
+
+            if (row < filledRows) {
+              var bc = getBarColor(avg, col, cols);
+              ctx.fillStyle = bc.color;
+            } else {
+              ctx.fillStyle = 'rgba(255,255,255,0.03)';
+            }
+            ctx.fillRect(x, y, cellW, cellH);
+          }
+        }
+        ctx.restore();
+      }
+
+      function draw() {
+        if (!visualizerRunning) return;
+        requestAnimationFrame(draw);
+
+        var now = Date.now();
+        var dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+        lastFrameTime = now;
+
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = rect.width;
+        const h = rect.height;
+
+        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+          canvas.width = w * dpr;
+          canvas.height = h * dpr;
+          canvas.style.width = w + "px";
+          canvas.style.height = h + "px";
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Earthquake shake
+        var quakeEffect = null;
+        for (var qi = 0; qi < overlayEffects.length; qi++) {
+          if (overlayEffects[qi].id === 'earthquake') { quakeEffect = overlayEffects[qi]; break; }
+        }
+        if (quakeEffect) {
+          var qElapsed = (now - quakeEffect.startTime) / 1000;
+          var qIntensity = Math.max(0, 1 - qElapsed / quakeEffect.duration);
+          ctx.translate((Math.random() - 0.5) * 20 * qIntensity, (Math.random() - 0.5) * 20 * qIntensity);
+        }
+
+        ctx.clearRect(-20, -20, w + 40, h + 40);
+
+        if (!analyserNode) return;
+
+        const bufLen = analyserNode.frequencyBinCount;
+        const data = new Uint8Array(bufLen);
+        analyserNode.getByteFrequencyData(data);
+
+        // Bass pulse
+        let bassSum = 0;
+        for (let bi = 0; bi < 6; bi++) bassSum += data[bi];
+        const bassLevel = bassSum / (6 * 255);
+        const bgOpacity = 0.10 + bassLevel * 0.20;
+        bgArt.style.opacity = bgArt.classList.contains("visible") ? bgOpacity : 0;
+
+        // Disco hue rotation
+        if (visualizerFx.colorMode === 'disco') {
+          visualizerFx.hueOffset = (visualizerFx.hueOffset + 2) % 360;
+        }
+
+        // Dispatch to mode renderer
+        var mode = visualizerFx.mode;
+        if (mode === 'scope') drawScope(w, h);
+        else if (mode === 'circle') drawCircle(data, w, h);
+        else if (mode === 'blocks') drawBlocks(data, w, h);
+        else drawBars(data, w, h);
 
         // Glow line at base
         const grad = ctx.createLinearGradient(0, h - 3, 0, h);
@@ -990,6 +1524,23 @@
         grad.addColorStop(1, "rgba(255, 79, 0, 0)");
         ctx.fillStyle = grad;
         ctx.fillRect(0, h - 3, w, 3);
+
+        // Render overlays
+        for (var oi = overlayEffects.length - 1; oi >= 0; oi--) {
+          var ov = overlayEffects[oi];
+          var ovElapsed = (now - ov.startTime) / 1000;
+          if (ovElapsed >= ov.duration) {
+            overlayEffects.splice(oi, 1);
+            continue;
+          }
+          ov.update(dt, ovElapsed);
+          ov.render(ctx, w, h, dt);
+        }
+
+        // Reset earthquake transform
+        if (quakeEffect) {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
       }
 
       draw();
@@ -1307,6 +1858,189 @@
       twitchChat.init();
     }
 
+    // ---- Chat-Triggered Visualizer Effects ----
+    var chatEffects = (function() {
+      var EFFECT_DURATION = 30000; // 30 seconds
+
+      function resetColors() {
+        if (visualizerFx.timer) {
+          clearTimeout(visualizerFx.timer);
+        }
+        visualizerFx.colorMode = 'default';
+        visualizerFx.intensity = 1.0;
+        visualizerFx.glowMultiplier = 1.0;
+        visualizerFx.rain = false;
+        visualizerFx.hueOffset = 0;
+        visualizerFx.timer = null;
+      }
+
+      function reset() {
+        resetColors();
+        visualizerFx.mode = 'bars';
+        overlayEffects.length = 0;
+      }
+
+      function applyTimedEffect(fn) {
+        resetColors();
+        fn();
+        visualizerFx.timer = setTimeout(resetColors, EFFECT_DURATION);
+      }
+
+      var effects = {
+        disco: function() {
+          applyTimedEffect(function() {
+            visualizerFx.colorMode = 'disco';
+          });
+        },
+        matrix: function() {
+          applyTimedEffect(function() {
+            visualizerFx.colorMode = 'matrix';
+          });
+        },
+        vaporwave: function() {
+          applyTimedEffect(function() {
+            visualizerFx.colorMode = 'vaporwave';
+          });
+        },
+        party: function() {
+          applyTimedEffect(function() {
+            visualizerFx.intensity = 1.3;
+            visualizerFx.glowMultiplier = 2.0;
+          });
+        },
+        chill: function() {
+          applyTimedEffect(function() {
+            visualizerFx.colorMode = 'chill';
+            visualizerFx.intensity = 0.7;
+          });
+        },
+        rain: function() {
+          applyTimedEffect(function() {
+            visualizerFx.rain = true;
+          });
+        },
+        reset: function() {
+          reset();
+        },
+        bars: function() {
+          visualizerFx.mode = 'bars';
+        },
+        scope: function() {
+          visualizerFx.mode = 'scope';
+        },
+        circle: function() {
+          visualizerFx.mode = 'circle';
+        },
+        blocks: function() {
+          visualizerFx.mode = 'blocks';
+        },
+        discoball: function() {
+          createDiscoBall();
+        },
+        confetti: function() {
+          createConfetti();
+        },
+        fire: function() {
+          createFire();
+        },
+        snow: function() {
+          createSnow();
+        },
+        earthquake: function() {
+          createEarthquake();
+        },
+        nextchannel: function() {
+          if (!stations.length) return;
+          var idx = -1;
+          for (var i = 0; i < stations.length; i++) {
+            if (parseFloat(stations[i].freq) === currentFreq) { idx = i; break; }
+          }
+          var next = (idx + 1) % stations.length;
+          var freq = parseFloat(stations[next].freq);
+          var slider = document.getElementById('tuner-range');
+          if (slider) slider.value = Math.round(freq * 10);
+          onFrequencyChange(freq);
+        },
+        previouschannel: function() {
+          if (!stations.length) return;
+          var idx = -1;
+          for (var i = 0; i < stations.length; i++) {
+            if (parseFloat(stations[i].freq) === currentFreq) { idx = i; break; }
+          }
+          var prev = (idx - 1 + stations.length) % stations.length;
+          var freq = parseFloat(stations[prev].freq);
+          var slider = document.getElementById('tuner-range');
+          if (slider) slider.value = Math.round(freq * 10);
+          onFrequencyChange(freq);
+        }
+      };
+
+      function trigger(commandName) {
+        var cmd = commandName.toLowerCase();
+        if (effects[cmd]) {
+          effects[cmd]();
+          return true;
+        }
+        return false;
+      }
+
+      function processMessage(text) {
+        if (!text || text.charAt(0) !== '!') return false;
+        var cmd = text.split(' ')[0].substring(1);
+        return trigger(cmd);
+      }
+
+      return { trigger: trigger, reset: reset, processMessage: processMessage };
+    })();
+
+    // ---- Dev Menu ----
+    (function() {
+      var menu = document.getElementById('dev-menu');
+      var timedFx = ['disco', 'matrix', 'vaporwave', 'party', 'chill', 'rain'];
+
+      function updateHighlight() {
+        var btns = menu.querySelectorAll('button[data-fx]');
+        var modes = { bars: 1, scope: 1, circle: 1, blocks: 1 };
+        var overlayIds = {};
+        for (var oi = 0; oi < overlayEffects.length; oi++) overlayIds[overlayEffects[oi].id] = 1;
+        for (var i = 0; i < btns.length; i++) {
+          var fx = btns[i].getAttribute('data-fx');
+          var active = false;
+          if (fx === visualizerFx.colorMode && fx !== 'default') active = true;
+          if (fx === 'party' && visualizerFx.intensity === 1.3) active = true;
+          if (fx === 'rain' && visualizerFx.rain) active = true;
+          if (modes[fx] && fx === visualizerFx.mode) active = true;
+          if (overlayIds[fx]) active = true;
+          btns[i].classList.toggle('active-fx', active);
+        }
+      }
+
+      menu.addEventListener('click', function(e) {
+        var btn = e.target.closest('button[data-fx]');
+        if (!btn) return;
+        chatEffects.trigger(btn.getAttribute('data-fx'));
+        updateHighlight();
+      });
+
+      // Ctrl+Shift+D toggles the menu
+      document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+          e.preventDefault();
+          menu.classList.toggle('visible');
+        }
+      });
+
+      // ?dev=1 auto-opens
+      try {
+        if (new URLSearchParams(window.location.search).get('dev') === '1') {
+          menu.classList.add('visible');
+        }
+      } catch (e) {}
+
+      // Periodically sync highlight (effects auto-expire)
+      setInterval(updateHighlight, 1000);
+    })();
+
     // ---- Twitch Chat Integration ----
     var twitchChat = (function() {
       var TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
@@ -1467,6 +2201,8 @@
       function addMessage(msg) {
         messageBuffer.push(msg);
         if (messageBuffer.length > MAX_BUFFER) messageBuffer.shift();
+
+        chatEffects.processMessage(msg.text);
 
         if (mode === 'sidebar') appendSidebarMessage(msg);
         else if (mode === 'ticker') appendTickerItem(msg);
