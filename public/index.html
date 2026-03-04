@@ -332,6 +332,132 @@
       border-radius: 50%;
       cursor: pointer;
     }
+
+    /* --- Twitch Chat Integration --- */
+    .chat-toggle {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #666;
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      transition: color 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+    .chat-toggle:hover { color: #aaa; border-color: #555; }
+    .chat-toggle.active { color: #9146ff; border-color: #9146ff; }
+    .chat-toggle svg { width: 16px; height: 16px; fill: currentColor; }
+    .chat-toggle .chat-status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .chat-toggle .chat-status-dot.connected { background: #00c853; }
+    .chat-toggle .chat-status-dot.connecting { background: #ff9800; }
+    .chat-toggle .chat-status-dot.error { background: #f44336; }
+
+    .chat-sidebar {
+      position: absolute;
+      top: 0; right: 0;
+      width: 300px; height: 100%;
+      background: rgba(10, 10, 18, 0.88);
+      border-left: 1px solid #1a1a25;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      overflow: hidden;
+    }
+    .chat-sidebar.visible { transform: translateX(0); }
+    .chat-sidebar-header {
+      padding: 8px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #9146ff;
+      border-bottom: 1px solid #1a1a25;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .chat-sidebar-header .chat-channel-name {
+      color: #666;
+      font-weight: 400;
+      letter-spacing: 1px;
+    }
+    .chat-sidebar-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .chat-sidebar-messages::-webkit-scrollbar { width: 4px; }
+    .chat-sidebar-messages::-webkit-scrollbar-track { background: transparent; }
+    .chat-sidebar-messages::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+    .chat-msg {
+      font-size: 12px;
+      line-height: 1.4;
+      animation: chatFadeIn 0.2s ease;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    .chat-msg .chat-user { font-weight: 700; margin-right: 4px; }
+    .chat-msg .chat-text { color: #ccc; }
+    @keyframes chatFadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-ticker {
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%; height: 32px;
+      background: rgba(10, 10, 18, 0.85);
+      border-top: 1px solid #1a1a25;
+      z-index: 3;
+      overflow: hidden;
+      display: none;
+      align-items: center;
+    }
+    .chat-ticker.visible { display: flex; }
+    .chat-ticker-track {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      padding-left: 100%;
+      animation: tickerScroll 30s linear infinite;
+    }
+    .chat-ticker-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-right: 40px;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .chat-ticker-item .chat-user { font-weight: 700; }
+    .chat-ticker-item .chat-text { color: #ccc; }
+    .chat-ticker-item .ticker-sep {
+      color: #333;
+      margin: 0 8px;
+      font-size: 8px;
+    }
+    @keyframes tickerScroll {
+      from { transform: translateX(0); }
+      to { transform: translateX(-100%); }
+    }
   </style>
 </head>
 <body>
@@ -370,6 +496,15 @@
       <div class="pick-station-text">Tune the dial to find a station</div>
       <div class="pick-station-sub">Drag the slider or use arrow keys</div>
     </div>
+    <div class="chat-sidebar" id="chat-sidebar">
+      <div class="chat-sidebar-header">
+        TWITCH CHAT <span class="chat-channel-name" id="chat-channel-name"></span>
+      </div>
+      <div class="chat-sidebar-messages" id="chat-messages"></div>
+    </div>
+    <div class="chat-ticker" id="chat-ticker">
+      <div class="chat-ticker-track" id="chat-ticker-track"></div>
+    </div>
   </div>
 
   <!-- Compact bottom bar -->
@@ -378,6 +513,11 @@
       <span class="bottom-note" id="bottom-note">&#9835;</span>
       <span class="bottom-song-text" id="bottom-song-text"></span>
     </div>
+    <button class="chat-toggle" id="chat-toggle" title="Toggle Twitch chat">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+      <span class="chat-status-dot" id="chat-status-dot"></span>
+      <span class="chat-mode-label" id="chat-mode-label"></span>
+    </button>
     <div class="volume-controls">
       <button class="vol-icon" id="vol-btn">
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
@@ -1164,7 +1304,305 @@
       });
 
       connectWebSocket();
+      twitchChat.init();
     }
+
+    // ---- Twitch Chat Integration ----
+    var twitchChat = (function() {
+      var TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
+      var MAX_BUFFER = 100;
+      var MAX_SIDEBAR_MSGS = 100;
+      var MAX_TICKER_ITEMS = 30;
+      var RECONNECT_DELAY = 5000;
+      var MODES = ['off', 'sidebar', 'ticker'];
+
+      var channel = null;
+      var chatWs = null;
+      var mode = 'off';
+      var messageBuffer = [];
+      var isConnected = false;
+      var reconnectTimer = null;
+
+      function getChannel() {
+        try {
+          return new URLSearchParams(window.location.search).get('channel');
+        } catch (e) { return null; }
+      }
+
+      function hashColor(name) {
+        var hash = 0;
+        for (var i = 0; i < name.length; i++) {
+          hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return 'hsl(' + (Math.abs(hash) % 360) + ', 70%, 60%)';
+      }
+
+      function setStatus(status) {
+        var dot = document.getElementById('chat-status-dot');
+        if (!dot) return;
+        dot.className = 'chat-status-dot';
+        if (status) dot.classList.add(status);
+      }
+
+      function updateToggleUI() {
+        var btn = document.getElementById('chat-toggle');
+        var label = document.getElementById('chat-mode-label');
+        if (!btn || !label) return;
+        if (mode === 'off') {
+          btn.classList.remove('active');
+          label.textContent = '';
+        } else {
+          btn.classList.add('active');
+          label.textContent = mode === 'sidebar' ? 'CHAT' : 'TICKER';
+        }
+      }
+
+      function saveMode() {
+        try { localStorage.setItem('sunotime-chat-mode', mode); } catch (e) {}
+      }
+
+      function loadMode() {
+        try {
+          var m = localStorage.getItem('sunotime-chat-mode');
+          if (m && MODES.indexOf(m) !== -1) return m;
+        } catch (e) {}
+        return 'off';
+      }
+
+      function connect() {
+        if (chatWs || !channel) return;
+        setStatus('connecting');
+        var nick = 'justinfan' + Math.floor(Math.random() * 99999);
+        chatWs = new WebSocket(TWITCH_IRC_URL);
+
+        chatWs.onopen = function() {
+          chatWs.send('CAP REQ :twitch.tv/tags');
+          chatWs.send('NICK ' + nick);
+          chatWs.send('JOIN #' + channel);
+          isConnected = true;
+          setStatus('connected');
+        };
+
+        chatWs.onmessage = function(event) {
+          var lines = event.data.split('\r\n');
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (!line) continue;
+            if (line === 'PING :tmi.twitch.tv') {
+              chatWs.send('PONG :tmi.twitch.tv');
+              continue;
+            }
+            var parsed = parseMessage(line);
+            if (parsed) addMessage(parsed);
+          }
+        };
+
+        chatWs.onclose = function() {
+          chatWs = null;
+          isConnected = false;
+          if (mode !== 'off') {
+            setStatus('error');
+            reconnectTimer = setTimeout(function() {
+              reconnectTimer = null;
+              if (mode !== 'off') connect();
+            }, RECONNECT_DELAY);
+          }
+        };
+
+        chatWs.onerror = function() {
+          if (chatWs) chatWs.close();
+        };
+      }
+
+      function disconnect() {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        if (chatWs) {
+          chatWs.close();
+          chatWs = null;
+        }
+        isConnected = false;
+        setStatus('');
+      }
+
+      function parseMessage(line) {
+        var tags = {};
+        var rest = line;
+
+        if (rest.charAt(0) === '@') {
+          var spaceIdx = rest.indexOf(' ');
+          if (spaceIdx === -1) return null;
+          var tagStr = rest.substring(1, spaceIdx);
+          rest = rest.substring(spaceIdx + 1);
+          var tagParts = tagStr.split(';');
+          for (var i = 0; i < tagParts.length; i++) {
+            var eq = tagParts[i].indexOf('=');
+            if (eq !== -1) {
+              tags[tagParts[i].substring(0, eq)] = tagParts[i].substring(eq + 1);
+            }
+          }
+        }
+
+        var privmsgIdx = rest.indexOf(' PRIVMSG ');
+        if (privmsgIdx === -1) return null;
+
+        var prefix = rest.substring(0, privmsgIdx);
+        if (prefix.charAt(0) === ':') prefix = prefix.substring(1);
+        var exclIdx = prefix.indexOf('!');
+        var username = exclIdx !== -1 ? prefix.substring(0, exclIdx) : prefix;
+
+        var afterPrivmsg = rest.substring(privmsgIdx + 9);
+        var colonIdx = afterPrivmsg.indexOf(' :');
+        var text = colonIdx !== -1 ? afterPrivmsg.substring(colonIdx + 2) : '';
+
+        return {
+          username: tags['display-name'] || username,
+          color: tags['color'] || hashColor(username),
+          text: text
+        };
+      }
+
+      function addMessage(msg) {
+        messageBuffer.push(msg);
+        if (messageBuffer.length > MAX_BUFFER) messageBuffer.shift();
+
+        if (mode === 'sidebar') appendSidebarMessage(msg);
+        else if (mode === 'ticker') appendTickerItem(msg);
+      }
+
+      function appendSidebarMessage(msg) {
+        var container = document.getElementById('chat-messages');
+        if (!container) return;
+
+        var atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+
+        var div = document.createElement('div');
+        div.className = 'chat-msg';
+
+        var userSpan = document.createElement('span');
+        userSpan.className = 'chat-user';
+        userSpan.style.color = msg.color;
+        userSpan.textContent = msg.username + ':';
+
+        var textSpan = document.createElement('span');
+        textSpan.className = 'chat-text';
+        textSpan.textContent = ' ' + msg.text;
+
+        div.appendChild(userSpan);
+        div.appendChild(textSpan);
+        container.appendChild(div);
+
+        while (container.children.length > MAX_SIDEBAR_MSGS) {
+          container.removeChild(container.firstChild);
+        }
+
+        if (atBottom) container.scrollTop = container.scrollHeight;
+      }
+
+      function appendTickerItem(msg) {
+        var track = document.getElementById('chat-ticker-track');
+        if (!track) return;
+
+        var item = document.createElement('span');
+        item.className = 'chat-ticker-item';
+
+        var userSpan = document.createElement('span');
+        userSpan.className = 'chat-user';
+        userSpan.style.color = msg.color;
+        userSpan.textContent = msg.username;
+
+        var textSpan = document.createElement('span');
+        textSpan.className = 'chat-text';
+        textSpan.textContent = msg.text;
+
+        var sep = document.createElement('span');
+        sep.className = 'ticker-sep';
+        sep.textContent = '\u25CF';
+
+        item.appendChild(userSpan);
+        item.appendChild(textSpan);
+        item.appendChild(sep);
+        track.appendChild(item);
+
+        while (track.children.length > MAX_TICKER_ITEMS) {
+          track.removeChild(track.firstChild);
+        }
+
+        var totalWidth = track.scrollWidth + track.parentElement.offsetWidth;
+        track.style.animationDuration = Math.max(10, totalWidth / 60) + 's';
+      }
+
+      function rebuildSidebar() {
+        var container = document.getElementById('chat-messages');
+        if (!container) return;
+        container.innerHTML = '';
+        for (var i = 0; i < messageBuffer.length; i++) {
+          appendSidebarMessage(messageBuffer[i]);
+        }
+      }
+
+      function rebuildTicker() {
+        var track = document.getElementById('chat-ticker-track');
+        if (!track) return;
+        track.innerHTML = '';
+        var start = Math.max(0, messageBuffer.length - MAX_TICKER_ITEMS);
+        for (var i = start; i < messageBuffer.length; i++) {
+          appendTickerItem(messageBuffer[i]);
+        }
+      }
+
+      function showMode(newMode) {
+        mode = newMode;
+        saveMode();
+        updateToggleUI();
+
+        var sidebar = document.getElementById('chat-sidebar');
+        var ticker = document.getElementById('chat-ticker');
+
+        if (mode === 'off') {
+          sidebar.classList.remove('visible');
+          ticker.classList.remove('visible');
+          disconnect();
+        } else if (mode === 'sidebar') {
+          sidebar.classList.add('visible');
+          ticker.classList.remove('visible');
+          rebuildSidebar();
+          if (!isConnected) connect();
+        } else if (mode === 'ticker') {
+          sidebar.classList.remove('visible');
+          ticker.classList.add('visible');
+          rebuildTicker();
+          if (!isConnected) connect();
+        }
+      }
+
+      function cycleMode() {
+        var idx = MODES.indexOf(mode);
+        showMode(MODES[(idx + 1) % MODES.length]);
+      }
+
+      function init() {
+        channel = getChannel();
+        if (!channel) return;
+        channel = channel.toLowerCase().replace(/^#/, '');
+
+        var btn = document.getElementById('chat-toggle');
+        if (btn) {
+          btn.style.display = 'flex';
+          btn.addEventListener('click', cycleMode);
+        }
+
+        var channelLabel = document.getElementById('chat-channel-name');
+        if (channelLabel) channelLabel.textContent = '#' + channel;
+
+        var savedMode = loadMode();
+        if (savedMode !== 'off') showMode(savedMode);
+      }
+
+      return { init: init, parseMessage: parseMessage, hashColor: hashColor, _addMessage: addMessage };
+    })();
 
     init();
   </script>
