@@ -1220,9 +1220,9 @@
       let peakHold = null;
       var lastFrameTime = Date.now();
 
-      function getBarColor(val, index, total) {
+      function getBarColor(val, index, total, edgeFadeOverride) {
         var cm = visualizerFx.colorMode;
-        var edgeFade = Math.min(1, (index / total) * 4, ((total - 1 - index) / total) * 4);
+        var edgeFade = edgeFadeOverride !== undefined ? edgeFadeOverride : Math.min(1, (index / total) * 4, ((total - 1 - index) / total) * 4);
         var alpha = (val * 0.85 + 0.08) * edgeFade;
         var color, glowColor, peakColor;
         if (cm === 'disco') {
@@ -1367,8 +1367,9 @@
       function drawCircle(data, w, h) {
         var half = Math.floor(data.length / 2);
         var cx = w / 2, cy = h / 2;
-        var innerR = Math.min(w, h) * 0.15;
-        var maxLen = Math.min(w, h) * 0.3;
+        var minDim = Math.min(w, h);
+        var innerR = minDim * 0.15;
+        var maxLen = minDim * 0.3;
 
         if (!peaks || peaks.length !== half) {
           peaks = new Float32Array(half);
@@ -1376,7 +1377,9 @@
           peakHold = new Uint16Array(half);
         }
 
-        var lineW = Math.max(1.5, (2 * Math.PI * innerR) / half - 1);
+        // Mirrored: half bins × 2 sides = full circle
+        var totalBars = half * 2;
+        var lineW = Math.max(1.5, (2 * Math.PI * innerR) / totalBars - 0.5);
 
         ctx.save();
         ctx.shadowBlur = 10 * visualizerFx.glowMultiplier;
@@ -1384,22 +1387,31 @@
 
         for (var i = 0; i < half; i++) {
           var val = data[i] / 255;
-          var angle = (i / half) * Math.PI * 2 - Math.PI / 2;
           var barLen = val * maxLen * visualizerFx.intensity;
-          var bc = getBarColor(val, i, half);
+          var bc = getBarColor(val, i, half, 1.0); // no edge fade for closed circle
 
-          var x1 = cx + Math.cos(angle) * innerR;
-          var y1 = cy + Math.sin(angle) * innerR;
-          var x2 = cx + Math.cos(angle) * (innerR + barLen);
-          var y2 = cy + Math.sin(angle) * (innerR + barLen);
+          // Mirror: bass (i=0) at top, spreading clockwise + counterclockwise
+          var angleR = (i / half) * Math.PI - Math.PI / 2;
+          var angleL = -(i / half) * Math.PI - Math.PI / 2;
 
           ctx.strokeStyle = bc.color;
           ctx.shadowColor = bc.glowColor;
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
 
+          // Right half
+          var x1 = cx + Math.cos(angleR) * innerR;
+          var y1 = cy + Math.sin(angleR) * innerR;
+          var x2 = cx + Math.cos(angleR) * (innerR + barLen);
+          var y2 = cy + Math.sin(angleR) * (innerR + barLen);
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+          // Left half (mirror)
+          x1 = cx + Math.cos(angleL) * innerR;
+          y1 = cy + Math.sin(angleL) * innerR;
+          x2 = cx + Math.cos(angleL) * (innerR + barLen);
+          y2 = cy + Math.sin(angleL) * (innerR + barLen);
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+          // Peak hold
           if (val >= peaks[i]) {
             peaks[i] = val;
             peakVel[i] = 0;
@@ -1413,15 +1425,19 @@
             }
           }
 
+          // Peak dots on both sides
           var peakDist = innerR + peaks[i] * maxLen * visualizerFx.intensity;
-          var px = cx + Math.cos(angle) * peakDist;
-          var py = cy + Math.sin(angle) * peakDist;
-          var peakAlpha = bc.edgeFade * (0.5 + peaks[i] * 0.5);
+          var peakAlpha = 0.5 + peaks[i] * 0.5;
           ctx.fillStyle = bc.peakColor + peakAlpha + ')';
           ctx.shadowColor = 'transparent';
-          ctx.beginPath();
-          ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2);
-          ctx.fill();
+
+          var px = cx + Math.cos(angleR) * peakDist;
+          var py = cy + Math.sin(angleR) * peakDist;
+          ctx.beginPath(); ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2); ctx.fill();
+
+          px = cx + Math.cos(angleL) * peakDist;
+          py = cy + Math.sin(angleL) * peakDist;
+          ctx.beginPath(); ctx.arc(px, py, lineW * 0.6, 0, Math.PI * 2); ctx.fill();
         }
 
         ctx.restore();
