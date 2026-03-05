@@ -84,6 +84,12 @@
     }
     .top-station-name.hidden { opacity: 0; }
 
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     .on-air {
       display: flex;
       align-items: center;
@@ -107,6 +113,41 @@
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
+    }
+
+    /* --- News ticker --- */
+    .news-ticker {
+      width: 100%;
+      background: rgba(8, 8, 14, 0.9);
+      border-bottom: 1px solid #1a1a25;
+      overflow: hidden;
+      position: relative;
+      z-index: 2;
+      height: 0;
+      transition: height 0.25s ease;
+    }
+    .news-ticker.visible {
+      height: 28px;
+    }
+    .news-ticker-track {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      white-space: nowrap;
+    }
+    .news-ticker-text {
+      font-size: 11px;
+      color: #999;
+      letter-spacing: 0.5px;
+    }
+    .news-ticker-text a {
+      color: #ff4f00;
+      text-decoration: none;
+    }
+    .news-ticker-text a:hover { text-decoration: underline; }
+    @keyframes newsTicker {
+      from { transform: translateX(100vw); }
+      to { transform: translateX(-100%); }
     }
 
     /* --- Tuner Panel (dial) --- */
@@ -297,6 +338,8 @@
       font-weight: 600;
       color: #e0e0e0;
     }
+    .bottom-title a { color: inherit; text-decoration: none; }
+    .bottom-title a:hover { text-decoration: underline; }
 
     .bottom-sep {
       color: #444;
@@ -308,6 +351,20 @@
       font-size: 14px;
       color: #888;
     }
+    .bottom-artist a { color: inherit; text-decoration: none; }
+    .bottom-artist a:hover { text-decoration: underline; }
+
+    .powered-by {
+      font-size: 10px;
+      color: #555;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+    .powered-by a {
+      color: #888;
+      text-decoration: none;
+    }
+    .powered-by a:hover { text-decoration: underline; color: #aaa; }
 
     .volume-controls {
       display: flex;
@@ -366,6 +423,8 @@
     .chat-toggle:hover { color: #aaa; border-color: #555; }
     .chat-toggle.active { color: #9146ff; border-color: #9146ff; }
     .chat-toggle svg { width: 16px; height: 16px; fill: currentColor; }
+    #viz-menu-toggle { display: flex; }
+    #viz-menu-toggle.active { color: #ff4f00; border-color: #ff4f00; }
     .chat-toggle .chat-status-dot {
       width: 6px; height: 6px;
       border-radius: 50%;
@@ -602,7 +661,7 @@
       .chat-sidebar { width: 100%; }
       .chat-toggle { padding: 10px 12px; }
 
-      .dev-menu { display: none !important; }
+      .dev-menu { max-width: 280px; }
     }
 
     /* --- Mobile: small phones --- */
@@ -625,6 +684,13 @@
   <!-- Background shader (full-viewport, behind everything) -->
   <canvas id="bg-shader"></canvas>
 
+  <!-- News ticker -->
+  <div class="news-ticker" id="news-ticker">
+    <div class="news-ticker-track" id="news-ticker-track">
+      <span class="news-ticker-text">This site was created by Tony Mangione. Do you want to hire or work with me? Check out my site: <a href="https://www.tonythedev.com" target="_blank" rel="noopener">www.tonythedev.com</a> or find me on <a href="https://www.linkedin.com/in/tonythedev" target="_blank" rel="noopener">LinkedIn</a>! Have an awesome day! &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Want to connect your Twitch chat? Just visit <span style="color:#ff4f00">sunoradio.tonythedev.com?channel=YourTwitchChannel</span>!</span>
+    </div>
+  </div>
+
   <!-- Compact top bar -->
   <div class="top-bar">
     <div class="top-bar-left">
@@ -632,9 +698,12 @@
       <span class="top-dot">&middot;</span>
       <span class="top-station-name hidden" id="top-station-name"></span>
     </div>
-    <div class="on-air" id="on-air">
-      <span>ON AIR</span>
-      <span class="on-air-dot"></span>
+    <div class="top-bar-right">
+      <span class="powered-by">Powered by <a href="https://suno.com" target="_blank" rel="noopener">Suno</a></span>
+      <div class="on-air" id="on-air">
+        <span>ON AIR</span>
+        <span class="on-air-dot"></span>
+      </div>
     </div>
   </div>
 
@@ -678,6 +747,9 @@
       <span class="chat-status-dot" id="chat-status-dot"></span>
       <span class="chat-mode-label" id="chat-mode-label"></span>
     </button>
+    <button class="chat-toggle" id="viz-menu-toggle" title="Visualizer Menu">
+      <svg viewBox="0 0 24 24"><path d="M1 10h4v8H1zm6-4h4v12H7zm6-4h4v16h-4zm6 7h4v9h-4z"/></svg>
+    </button>
     <div class="volume-controls">
       <button class="vol-icon" id="vol-btn">
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
@@ -686,9 +758,9 @@
     </div>
   </div>
 
-  <!-- Dev menu for testing effects (Ctrl+Shift+D to toggle) -->
+  <!-- Visualizer menu (toggle via bottom bar button or Ctrl+Shift+D) -->
   <div class="dev-menu" id="dev-menu">
-    <div class="dev-menu-title">FX Dev Menu</div>
+    <div class="dev-menu-title">Visualizer Menu</div>
     <div class="dev-menu-section">Mode</div>
     <div class="dev-menu-row">
       <button data-fx="bars">Bars</button>
@@ -1143,9 +1215,13 @@
 
     function ensureAudio() {
       if (!audioCtx) initAudioEngine();
-      if (audioCtx.state === "suspended") audioCtx.resume();
+      var wasSuspended = audioCtx.state === "suspended";
+      if (wasSuspended) audioCtx.resume();
       if (!started) {
         started = true;
+        updateChannels();
+      } else if (wasSuspended) {
+        // AudioContext just resumed after autoplay block — retry playing
         updateChannels();
       }
     }
@@ -1380,7 +1456,13 @@
     function renderNowPlaying(song, station) {
       // Update bottom bar song info
       const songText = document.getElementById("bottom-song-text");
-      songText.innerHTML = `<span class="bottom-title" data-testid="song-title">${esc(song.title)}</span><span class="bottom-sep">&mdash;</span><span class="bottom-artist" data-testid="song-artist">${esc(song.artist)}</span>`;
+      var titleHtml = song.id
+        ? `<a href="https://suno.com/song/${esc(song.id)}" target="_blank" rel="noopener">${esc(song.title)}</a>`
+        : esc(song.title);
+      var artistHtml = song.handle
+        ? `<a href="https://suno.com/@${esc(song.handle)}" target="_blank" rel="noopener">${esc(song.artist)}</a>`
+        : esc(song.artist);
+      songText.innerHTML = `<span class="bottom-title" data-testid="song-title">${titleHtml}</span><span class="bottom-sep">&mdash;</span><span class="bottom-artist" data-testid="song-artist">${artistHtml}</span>`;
       document.getElementById("bottom-note").classList.add("visible");
 
       // Update background art
@@ -2837,6 +2919,17 @@
       ensureAudio();
       onFrequencyChange(freq);
 
+      // First user gesture unblocks autoplay — listen for any interaction
+      function onFirstInteraction() {
+        ensureAudio();
+        document.removeEventListener("click", onFirstInteraction);
+        document.removeEventListener("touchstart", onFirstInteraction);
+        document.removeEventListener("keydown", onFirstInteraction);
+      }
+      document.addEventListener("click", onFirstInteraction);
+      document.addEventListener("touchstart", onFirstInteraction);
+      document.addEventListener("keydown", onFirstInteraction);
+
       window.addEventListener("resize", () => {
         drawDial();
         updateNeedlePosition();
@@ -3221,17 +3314,14 @@
         }
       });
 
-      // ?dev=1 auto-opens and adds a toggle button
-      try {
-        if (new URLSearchParams(window.location.search).get('dev') === '1') {
-          menu.classList.add('visible');
-          var toggle = document.createElement('button');
-          toggle.textContent = 'DEV';
-          toggle.style.cssText = 'position:fixed;top:6px;right:6px;z-index:9999;background:#1a1a25;color:#ff4f00;border:1px solid #333;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;opacity:0.7;font-family:inherit';
-          toggle.addEventListener('click', function() { menu.classList.toggle('visible'); });
-          document.body.appendChild(toggle);
-        }
-      } catch (e) {}
+      // Visualizer menu toggle button in bottom bar
+      var vizToggle = document.getElementById('viz-menu-toggle');
+      if (vizToggle) {
+        vizToggle.addEventListener('click', function() {
+          menu.classList.toggle('visible');
+          vizToggle.classList.toggle('active', menu.classList.contains('visible'));
+        });
+      }
 
       // Periodically sync highlight (effects auto-expire)
       setInterval(updateHighlight, 1000);
@@ -3534,6 +3624,36 @@
       }
 
       return { init: init, parseMessage: parseMessage, hashColor: hashColor, _addMessage: addMessage };
+    })();
+
+    // ---- News Ticker (play once, roll up, repeat every 3 min) ----
+    (function() {
+      var ticker = document.getElementById('news-ticker');
+      var track = document.getElementById('news-ticker-track');
+      var INTERVAL = 3 * 60 * 1000; // 3 minutes between shows
+
+      function showTicker() {
+        // Reset position
+        track.style.animation = 'none';
+        track.offsetHeight; // force reflow
+        // Calculate duration based on text width
+        var textWidth = track.scrollWidth;
+        var vpWidth = window.innerWidth;
+        var duration = (textWidth + vpWidth) / 180; // ~180px/sec
+        track.style.animation = 'newsTicker ' + duration + 's linear forwards';
+        // Slide down
+        ticker.classList.add('visible');
+        // When scroll finishes, slide back up
+        track.addEventListener('animationend', function handler() {
+          track.removeEventListener('animationend', handler);
+          ticker.classList.remove('visible');
+        });
+      }
+
+      // First show after 2 seconds
+      setTimeout(showTicker, 2000);
+      // Repeat every INTERVAL
+      setInterval(showTicker, INTERVAL);
     })();
 
     init();
