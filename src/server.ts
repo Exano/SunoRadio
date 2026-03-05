@@ -2,10 +2,29 @@ import express from "express";
 import { createServer } from "http";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { mkdirSync } from "fs";
 import { WebSocketServer, WebSocket } from "ws";
+import Database from "better-sqlite3";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
+
+// --- SQLite cache setup ---
+const dataDir = join(root, "data");
+mkdirSync(dataDir, { recursive: true });
+
+const db = new Database(join(dataDir, "cache.db"));
+db.pragma("journal_mode = WAL");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS station_cache (
+    freq TEXT PRIMARY KEY,
+    songs TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+  )
+`);
+
+const getStmt = db.prepare("SELECT songs, fetched_at FROM station_cache WHERE freq = ?");
+const setStmt = db.prepare("INSERT OR REPLACE INTO station_cache (freq, songs, fetched_at) VALUES (?, ?, ?)");
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -71,8 +90,18 @@ interface SunoClip {
   createdAt: string;
 }
 
-const CACHE_TTL = 2 * 60 * 1000;
+const CACHE_TTL = 20 * 60 * 1000;
 const stationCache = new Map<string, { songs: SunoClip[]; fetchedAt: number }>();
+
+function getFromSqlite(freq: string): { songs: SunoClip[]; fetchedAt: number } | null {
+  const row = getStmt.get(freq) as { songs: string; fetched_at: number } | undefined;
+  if (!row) return null;
+  return { songs: JSON.parse(row.songs), fetchedAt: row.fetched_at };
+}
+
+function saveToSqlite(freq: string, songs: SunoClip[]) {
+  setStmt.run(freq, JSON.stringify(songs), Date.now());
+}
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -173,11 +202,21 @@ async function fetchPlaylist(playlistId: string, retries = 2): Promise<SunoClip[
 
 async function fetchStationSongs(station: Station): Promise<SunoClip[]> {
   const now = Date.now();
+
+  // 1. Check in-memory cache
   const cached = stationCache.get(station.freq);
   if (cached && now - cached.fetchedAt < CACHE_TTL) {
     return cached.songs;
   }
 
+  // 2. Check SQLite cache
+  const sqlRow = getFromSqlite(station.freq);
+  if (sqlRow && now - sqlRow.fetchedAt < CACHE_TTL) {
+    stationCache.set(station.freq, sqlRow);
+    return sqlRow.songs;
+  }
+
+  // 3. Fetch from Suno API
   let songs: SunoClip[] = [];
 
   // Try playlist first if configured
@@ -199,18 +238,41 @@ async function fetchStationSongs(station: Station): Promise<SunoClip[]> {
     }
   }
 
-  console.log(`Fetched ${songs.length} songs for ${station.name}`);
+  // 4. Save to SQLite + in-memory
+  console.log(`Fetched ${songs.length} songs for ${station.name} from API`);
+  saveToSqlite(station.freq, songs);
   stationCache.set(station.freq, { songs, fetchedAt: now });
   return songs;
 }
 
-// Pre-warm all station caches sequentially on startup
+// Pre-warm all station caches: load SQLite rows first, only API-fetch missing stations
 async function warmUpCaches() {
   console.log("Warming up station caches...");
+
+  let loadedFromDb = 0;
+  let fetchedFromApi = 0;
+  const toFetch: Station[] = [];
+
+  // Load all existing SQLite rows into memory (serve stale on startup)
   for (const station of STATIONS) {
-    await fetchStationSongs(station);
+    const row = getFromSqlite(station.freq);
+    if (row && row.songs.length > 0) {
+      stationCache.set(station.freq, row);
+      loadedFromDb++;
+    } else {
+      toFetch.push(station);
+    }
   }
-  console.log("All station caches warm.");
+
+  console.log(`Loaded ${loadedFromDb} stations from SQLite cache, ${toFetch.length} need fresh fetch`);
+
+  // Only fetch stations with no SQLite data at all
+  for (const station of toFetch) {
+    await fetchStationSongs(station);
+    fetchedFromApi++;
+  }
+
+  console.log(`Warm-up complete: ${loadedFromDb} cached, ${fetchedFromApi} fetched from API`);
 }
 
 // Deterministic seeded shuffle — same seed produces same order
