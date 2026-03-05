@@ -35,10 +35,10 @@ function getOverlays(page: any) {
 }
 
 test.describe("Visualizer Modes", () => {
-  test("default mode is bars", async ({ page }) => {
+  test("default mode is scope", async ({ page }) => {
     await loadApp(page);
     const fx = await getFx(page);
-    expect(fx.mode).toBe("bars");
+    expect(fx.mode).toBe("scope");
   });
 
   test("!bars sets mode to bars", async ({ page }) => {
@@ -87,12 +87,12 @@ test.describe("Visualizer Modes", () => {
     expect(fx.colorMode).toBe("disco");
   });
 
-  test("!reset restores mode to bars", async ({ page }) => {
+  test("!reset restores mode to scope", async ({ page }) => {
     await loadApp(page);
-    await page.evaluate(() => (window as any).chatEffects.trigger("scope"));
+    await page.evaluate(() => (window as any).chatEffects.trigger("bars"));
     await page.evaluate(() => (window as any).chatEffects.trigger("reset"));
     const fx = await getFx(page);
-    expect(fx.mode).toBe("bars");
+    expect(fx.mode).toBe("scope");
   });
 });
 

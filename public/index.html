@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <link rel="icon" type="image/png" href="/favicon.png">
   <title>SunoTime Radio</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -770,6 +771,10 @@
       <button data-fx="circle">Circle</button>
       <button data-fx="blocks">Blocks</button>
     </div>
+    <div class="dev-menu-row">
+      <button data-fx="terrain">Terrain</button>
+      <button data-fx="starfield">Starfield</button>
+    </div>
     <div class="dev-menu-section">Style</div>
     <div class="dev-menu-row">
       <button data-fx="disco">Disco</button>
@@ -811,20 +816,12 @@
       <button data-shader="fractal">Fractal</button>
     </div>
     <div class="dev-menu-row">
-      <button data-shader="aurora">Aurora</button>
       <button data-shader="ocean">Ocean</button>
-    </div>
-    <div class="dev-menu-row">
       <button data-shader="winamp">Winamp</button>
-      <button data-shader="gradient">Gradient</button>
     </div>
     <div class="dev-menu-row">
       <button data-shader="chromatic">Chromatic</button>
       <button data-shader="warp">Warp</button>
-    </div>
-    <div class="dev-menu-row">
-      <button data-shader="lava">Lava</button>
-      <button data-shader="clouds">Clouds</button>
     </div>
     <div class="dev-menu-row">
       <button data-shader="kaleidoscope">Kaleid.</button>
@@ -894,12 +891,14 @@
       rain: false,            // flip bar direction (top-down)
       hueOffset: 0,           // for disco rotation (incremented per frame)
       timer: null,            // setTimeout id for auto-expire
-      mode: 'bars',           // 'bars' | 'scope' | 'circle' | 'blocks'
+      mode: 'scope',          // 'bars' | 'scope' | 'circle' | 'blocks' | 'terrain' | 'starfield'
       params: {
         bars:   { gap: 1.5, height: 0.38, peakHold: 2, peakGravity: 0.0027, shadowBlur: 28, peakHeight: 2, minWidth: 1.5 },
         scope:  { lineWidth: 1.0, amplitude: 0.3, shadowBlur: 10 },
         circle: { innerRadius: 0.2, spikeLength: 0.25, shadowBlur: 15, minLineW: 3, peakDot: 0.6 },
-        blocks: { cols: 16, rows: 12, gapX: 2, gapY: 2, emptyAlpha: 0.03, maxHeight: 12 }
+        blocks: { cols: 32, rows: 24, gapX: 8, gapY: 0, emptyAlpha: 0.03, maxHeight: 10 },
+        terrain: { cols: 192, rows: 64, heightScale: 0.35, scrollSpeed: 15.0, perspective: 0.4, lineWidth: 1.0, fog: 0.7, smoothing: 0.3 },
+        starfield: { starCount: 200, baseSpeed: 0.4, speedReact: 0.8, trailLength: 0.15, starSize: 2.0, focalLen: 0.5, sparkle: 0.5, shadowBlur: 12 }
       }
     };
 
@@ -1558,6 +1557,7 @@
       'uniform float iP1a;',
       'uniform float iP2a;',
       'uniform float iP3a;',
+      'uniform vec3 iTint;',
       'out vec4 outColor;'
     ].join('\n') + '\n';
 
@@ -1573,7 +1573,7 @@
           '#define BRIGHTNESS (iP1 + iAudioLevel * iP1a)',
           '#define COLOR_BASE 1.5',
           '#define COLOR_SPEED (iP3 + iBassTime * iP3a)',
-          '#define RGB vec3(0.0, 1.0, 2.0)',
+          '#define RGB (vec3(atan(iTint.r, iTint.b), atan(iTint.g, iTint.r), atan(iTint.b, iTint.g)))',
           '#define COLOR_WAVE 14.0',
           '#define COLOR_DOT vec3(1,-1,0)',
           '#define WAVE_STEPS 8.0',
@@ -1623,11 +1623,13 @@
           '  v += sin((uv.x + uv.y) * freq * 0.6 + t * 0.7);',
           '  v += sin(length(uv - 0.5) * freq * 1.5 - t * 1.1);',
           '  v *= 0.25;',
+          '  float tintPhase = atan(iTint.g, iTint.r);',
           '  vec3 col = vec3(',
-          '    0.5 + 0.5 * sin(v * 3.14159 + t),',
-          '    0.5 + 0.5 * sin(v * 3.14159 + t + 2.094),',
-          '    0.5 + 0.5 * sin(v * 3.14159 + t + 4.189)',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t + tintPhase),',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t + tintPhase + 2.094),',
+          '    0.5 + 0.5 * sin(v * 3.14159 + t + tintPhase + 4.189)',
           '  );',
+          '  col *= iTint * 0.5 + 0.5;',
           '  col *= iP2 + iAudioLevel * iP2a;',
           '  outColor = vec4(col, 1.0);',
           '}'
@@ -1643,7 +1645,10 @@
         ],
         source: [
           'vec3 pal(float d) {',
-          '  return mix(vec3(0.15, 0.5, 0.8), vec3(0.9, 0.2, 0.8), d);',
+          '  vec3 base = mix(vec3(0.15, 0.5, 0.8), vec3(0.9, 0.2, 0.8), d);',
+          '  vec3 tinted = mix(iTint * 0.3, iTint * 1.2, d);',
+          '  float blend = smoothstep(0.0, 0.3, distance(iTint, vec3(0.1, 0.5, 0.95)));',
+          '  return mix(base, tinted, blend);',
           '}',
           'vec2 rot(vec2 p, float a) {',
           '  float c = cos(a), s = sin(a);',
@@ -1684,37 +1689,6 @@
         ].join('\n')
       },
 
-      aurora: {
-        params: [
-          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.3, audio: 0 },
-          { name: 'Amplitude', min: 0.05, max: 0.5, step: 0.05, default: 0.15, audio: 0.2 },
-          { name: 'Shimmer', min: 0.0, max: 1.0, step: 0.1, default: 0.2, audio: 0 },
-          { name: 'Brightness', min: 0.1, max: 1.0, step: 0.05, default: 0.4, audio: 0.6 }
-        ],
-        source: [
-          'void main() {',
-          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
-          '  float t = iTime * iP0;',
-          '  float amp = iP1 + iAudioLevel * iP1a;',
-          '  float wave = 0.0;',
-          '  for (float i = 1.0; i < 6.0; i++) {',
-          '    wave += amp / i * sin(uv.x * 6.0 * i + t * (0.5 + i * 0.3) + sin(t * 0.2) * 2.0);',
-          '  }',
-          '  float band = smoothstep(0.1, 0.0, abs(uv.y - 0.5 - wave * 0.3));',
-          '  band += 0.3 * smoothstep(0.2, 0.0, abs(uv.y - 0.5 - wave * 0.3));',
-          '  float shimmer = 0.8 + iP2 * sin(uv.x * 40.0 + t * 5.0) * iHigh;',
-          '  vec3 col1 = vec3(0.1, 0.8, 0.4);',
-          '  vec3 col2 = vec3(0.1, 0.4, 0.9);',
-          '  vec3 col3 = vec3(0.5, 0.2, 0.8);',
-          '  float phase = sin(uv.x * 3.0 + t) * 0.5 + 0.5;',
-          '  vec3 col = mix(mix(col1, col2, phase), col3, sin(t * 0.2) * 0.5 + 0.5);',
-          '  col *= band * shimmer * (iP3 + iAudioLevel * iP3a);',
-          '  col += vec3(0.02, 0.01, 0.04) * (1.0 - uv.y);',
-          '  outColor = vec4(col, 1.0);',
-          '}'
-        ].join('\n')
-      },
-
       ocean: {
         params: [
           { name: 'Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.4, audio: 0.5 },
@@ -1734,9 +1708,9 @@
           '  }',
           '  caustic /= 3.0;',
           '  float highlight = caustic * (0.5 + iHigh * 1.5);',
-          '  vec3 deep = vec3(0.01, 0.04, 0.12);',
-          '  vec3 mid = vec3(0.02, 0.12, 0.25);',
-          '  vec3 bright = vec3(0.1, 0.4, 0.5);',
+          '  vec3 deep = iTint * 0.08;',
+          '  vec3 mid = iTint * 0.25;',
+          '  vec3 bright = iTint * 0.7;',
           '  vec3 col = mix(deep, mid, caustic);',
           '  col += bright * highlight * 0.4;',
           '  col *= iP2 + iAudioLevel * iP2a;',
@@ -1768,8 +1742,8 @@
           '  y1 = y1 * 0.15 + 0.35;',
           '  float d1 = abs(uv.y - y1);',
           '  float line1 = smoothstep(iP1, iP1 * 0.2, d1);',
-          '  col += vec3(0.4, 0.15, 0.8) * line1 * iP3;',
-          '  col += vec3(0.2, 0.05, 0.5) * smoothstep(iP1 * 4.0, iP1 * 0.5, d1) * 0.3;',
+          '  col += iTint * line1 * iP3;',
+          '  col += iTint * 0.5 * smoothstep(iP1 * 4.0, iP1 * 0.5, d1) * 0.3;',
           '  float y2 = 0.0;',
           '  for (float i = 1.0; i <= 8.0; i++) {',
           '    if (i > nWaves) break;',
@@ -1778,35 +1752,9 @@
           '  y2 = y2 * 0.15 + 0.65;',
           '  float d2 = abs(uv.y - y2);',
           '  float line2 = smoothstep(iP1, iP1 * 0.2, d2);',
-          '  col += vec3(0.8, 0.5, 0.1) * line2 * iP3;',
-          '  col += vec3(0.5, 0.3, 0.0) * smoothstep(iP1 * 4.0, iP1 * 0.5, d2) * 0.3;',
-          '  outColor = vec4(col, 1.0);',
-          '}'
-        ].join('\n')
-      },
-
-      gradient: {
-        params: [
-          { name: 'Speed', min: 0.05, max: 1.0, step: 0.05, default: 0.2, audio: 0 },
-          { name: 'Warp', min: 0.0, max: 0.8, step: 0.05, default: 0.3, audio: 0 },
-          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.5, audio: 0.8 }
-        ],
-        source: [
-          'void main() {',
-          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
-          '  float t = iTime * iP0;',
-          '  float warp = iBass * iP1;',
-          '  vec2 p = uv;',
-          '  p.x += sin(uv.y * 3.0 + t) * warp;',
-          '  p.y += cos(uv.x * 3.0 + t * 0.7) * warp;',
-          '  float d1 = length(p - vec2(0.3 + 0.2 * sin(t), 0.4 + 0.2 * cos(t * 0.8)));',
-          '  float d2 = length(p - vec2(0.7 + 0.2 * cos(t * 0.6), 0.6 + 0.2 * sin(t * 0.9)));',
-          '  float d3 = length(p - vec2(0.5 + 0.3 * sin(t * 0.4), 0.3 + 0.2 * cos(t * 1.1)));',
-          '  vec3 c1 = vec3(0.4, 0.05, 0.2) / (d1 + 0.3);',
-          '  vec3 c2 = vec3(0.05, 0.15, 0.4) / (d2 + 0.3);',
-          '  vec3 c3 = vec3(0.2, 0.05, 0.35) / (d3 + 0.3);',
-          '  vec3 col = (c1 + c2 + c3) * 0.15;',
-          '  col *= iP2 + iAudioLevel * iP2a;',
+          '  vec3 tint2 = vec3(iTint.gb, iTint.r);',
+          '  col += tint2 * line2 * iP3;',
+          '  col += tint2 * 0.5 * smoothstep(iP1 * 4.0, iP1 * 0.5, d2) * 0.3;',
           '  outColor = vec4(col, 1.0);',
           '}'
         ].join('\n')
@@ -1839,7 +1787,8 @@
           '  float h = (a / 3.14159) * 0.5 + 0.5;',
           '  h += noise(uv * 4.0 + t * 0.5) * 0.3;',
           '  float hueSpd = iP2 + iHigh * iP2a;',
-          '  vec3 col = 0.5 + 0.5 * cos((-t * hueSpd + h + 0.9 * vec3(0.0, 0.33, 0.67)) * 6.28318);',
+          '  float tintHue = atan(iTint.g, iTint.r) / 6.28318;',
+          '  vec3 col = 0.5 + 0.5 * cos((-t * hueSpd + h + tintHue + vec3(0.0, 0.33, 0.67)) * 6.28318);',
           '  float pattern = noise(p * 6.0 + t) * 0.5 + noise(p * 12.0 - t * 0.5) * 0.25;',
           '  col *= (pattern + 0.3) * smoothstep(1.5, 0.0, r);',
           '  col *= iP3 + iAudioLevel * iP3a;',
@@ -1866,81 +1815,14 @@
           '  r *= iP1;',
           '  float v = sin(a * 3.0 + t) * cos(r * 6.0 - t * 0.5);',
           '  v += sin(r * 8.0 - t) * 0.5;',
+          '  float wTintPhase = atan(iTint.g, iTint.r);',
           '  vec3 col = vec3(',
-          '    0.5 + 0.5 * sin(v * 3.14 + t),',
-          '    0.5 + 0.5 * sin(v * 3.14 + t + 2.1),',
-          '    0.5 + 0.5 * sin(v * 3.14 + t + 4.2)',
+          '    0.5 + 0.5 * sin(v * 3.14 + t + wTintPhase),',
+          '    0.5 + 0.5 * sin(v * 3.14 + t + wTintPhase + 2.1),',
+          '    0.5 + 0.5 * sin(v * 3.14 + t + wTintPhase + 4.2)',
           '  );',
+          '  col *= iTint * 0.5 + 0.5;',
           '  col *= (iP3 + iAudioLevel * iP3a) * smoothstep(1.2, 0.0, r);',
-          '  outColor = vec4(col, 1.0);',
-          '}'
-        ].join('\n')
-      },
-
-      lava: {
-        params: [
-          { name: 'Speed', min: 0.05, max: 0.5, step: 0.05, default: 0.15, audio: 0 },
-          { name: 'Scale', min: 1.0, max: 6.0, step: 0.5, default: 2.5, audio: 0 },
-          { name: 'Brightness', min: 0.3, max: 2.0, step: 0.1, default: 0.8, audio: 0.5 }
-        ],
-        source: [
-          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
-          'float noise(vec2 p) {',
-          '  vec2 i = floor(p); vec2 f = fract(p);',
-          '  f = f * f * (3.0 - 2.0 * f);',
-          '  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),',
-          '             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);',
-          '}',
-          'void main() {',
-          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
-          '  float t = iTime * iP0;',
-          '  vec2 p = uv * iP1;',
-          '  float n = 0.0;',
-          '  n += 0.5 * noise(p + t);',
-          '  n += 0.25 * noise(p * 2.0 - t * 0.7);',
-          '  n += 0.125 * noise(p * 4.0 + t * 0.3);',
-          '  float blob = smoothstep(0.35, 0.55, n + iBass * 0.15);',
-          '  vec3 hot = vec3(1.0, 0.3, 0.0);',
-          '  vec3 cool = vec3(0.15, 0.02, 0.0);',
-          '  vec3 glow = vec3(1.0, 0.8, 0.2);',
-          '  vec3 col = mix(cool, hot, blob);',
-          '  col = mix(col, glow, blob * blob);',
-          '  col *= iP2 + iAudioLevel * iP2a;',
-          '  outColor = vec4(col, 1.0);',
-          '}'
-        ].join('\n')
-      },
-
-      clouds: {
-        params: [
-          { name: 'Speed', min: 0.02, max: 0.3, step: 0.02, default: 0.08, audio: 0 },
-          { name: 'Scale', min: 1.0, max: 6.0, step: 0.5, default: 3.0, audio: 0 },
-          { name: 'Density', min: 0.2, max: 0.8, step: 0.05, default: 0.45, audio: 0 },
-          { name: 'Brightness', min: 0.1, max: 0.6, step: 0.05, default: 0.25, audio: 0.3 }
-        ],
-        source: [
-          'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
-          'float noise(vec2 p) {',
-          '  vec2 i = floor(p); vec2 f = fract(p);',
-          '  f = f * f * (3.0 - 2.0 * f);',
-          '  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),',
-          '             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);',
-          '}',
-          'void main() {',
-          '  vec2 uv = gl_FragCoord.xy / iResolution.xy;',
-          '  float t = iTime * iP0;',
-          '  vec2 p = uv * iP1 + vec2(t, t * 0.3);',
-          '  float n = 0.0;',
-          '  float a = 0.5;',
-          '  for (int i = 0; i < 4; i++) {',
-          '    n += a * noise(p);',
-          '    p *= 2.0; a *= 0.5;',
-          '  }',
-          '  float cloud = smoothstep(iP2, iP2 + 0.2, n + iBass * 0.1);',
-          '  vec3 sky = vec3(0.02, 0.03, 0.08);',
-          '  vec3 cCol = vec3(0.15, 0.18, 0.25);',
-          '  vec3 col = mix(sky, cCol, cloud);',
-          '  col *= iP3 + iAudioLevel * iP3a;',
           '  outColor = vec4(col, 1.0);',
           '}'
         ].join('\n')
@@ -1966,11 +1848,13 @@
           '  float v1 = sin(p.x * 4.0 + t) * cos(p.y * 4.0 - t * 0.7);',
           '  float v2 = sin(length(p) * 6.0 - t * 1.2);',
           '  float v = v1 + v2;',
+          '  float kTintPhase = atan(iTint.g, iTint.r);',
           '  vec3 col = vec3(',
-          '    0.5 + 0.5 * sin(v + t),',
-          '    0.5 + 0.5 * sin(v + t + 2.094),',
-          '    0.5 + 0.5 * sin(v + t + 4.189)',
+          '    0.5 + 0.5 * sin(v + t + kTintPhase),',
+          '    0.5 + 0.5 * sin(v + t + kTintPhase + 2.094),',
+          '    0.5 + 0.5 * sin(v + t + kTintPhase + 4.189)',
           '  );',
+          '  col *= iTint * 0.5 + 0.5;',
           '  col *= (iP3 + iAudioLevel * iP3a) * smoothstep(1.0, 0.0, r);',
           '  outColor = vec4(col, 1.0);',
           '}'
@@ -1979,9 +1863,9 @@
 
       voronoi: {
         params: [
-          { name: 'Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.4, audio: 0 },
-          { name: 'Scale', min: 2.0, max: 12.0, step: 1.0, default: 5.0, audio: 0 },
-          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.5, audio: 0.6 }
+          { name: 'Speed', min: 0.1, max: 1.5, step: 0.1, default: 0.4, audio: 0.8 },
+          { name: 'Scale', min: 2.0, max: 50.0, step: 1.0, default: 39.0, audio: 3.0 },
+          { name: 'Brightness', min: 0.2, max: 1.5, step: 0.1, default: 0.4, audio: 0.8 }
         ],
         source: [
           'vec2 hash2(vec2 p) {',
@@ -1995,7 +1879,7 @@
           '  vec2 fp = fract(p);',
           '  float md = 8.0;',
           '  float md2 = 8.0;',
-          '  vec2 mg;',
+          '  vec2 mc;',
           '  for (int j = -1; j <= 1; j++) {',
           '    for (int i = -1; i <= 1; i++) {',
           '      vec2 g = vec2(float(i), float(j));',
@@ -2003,15 +1887,20 @@
           '      o = 0.5 + 0.5 * sin(t + 6.28 * o);',
           '      vec2 r = g + o - fp;',
           '      float d = dot(r, r);',
-          '      if (d < md) { md2 = md; md = d; mg = g; }',
+          '      if (d < md) { md2 = md; md = d; mc = ip + g; }',
           '      else if (d < md2) { md2 = d; }',
           '    }',
           '  }',
           '  float edge = md2 - md;',
           '  float cell = md;',
           '  vec3 col = vec3(0);',
-          '  float hue = dot(mg, vec2(1.0, 0.7)) + t * 0.3;',
+          '  vec2 ch = hash2(mc);',
+          '  float hue = (ch.x + ch.y) * 6.28 + t * 0.3 + atan(iTint.g, iTint.r);',
           '  col = vec3(0.5+0.5*sin(hue), 0.5+0.5*sin(hue+2.1), 0.5+0.5*sin(hue+4.2));',
+          '  col *= iTint * 0.5 + 0.5;',
+          '  vec3 edgeCol = iTint * 0.35;',
+          '  float edgeMask = smoothstep(0.0, 0.05, edge);',
+          '  col = mix(edgeCol, col, edgeMask);',
           '  col *= 0.3 + 0.7 * (1.0 - cell);',
           '  col *= iP2 + iAudioLevel * iP2a;',
           '  outColor = vec4(col, 1.0);',
@@ -2019,6 +1908,18 @@
         ].join('\n')
       }
     };
+
+    function getTintForStyle() {
+      var cm = visualizerFx.colorMode;
+      if (cm === 'vaporwave') return [0.1, 0.5, 0.95];
+      if (cm === 'matrix')    return [0.9, 0.15, 0.8];
+      if (cm === 'chill')     return [1.0, 0.55, 0.1];
+      if (cm === 'disco') {
+        var h = ((visualizerFx.hueOffset * 0.15 + 180) % 360) * 3.14159 / 180.0;
+        return [0.5 + 0.5 * Math.cos(h), 0.5 + 0.5 * Math.cos(h - 2.094), 0.5 + 0.5 * Math.cos(h - 4.189)];
+      }
+      return [0.1, 0.5, 0.95]; // default → cyan/blue
+    }
 
     function initShaderBG(name) {
       var shaderCanvas = document.getElementById('bg-shader');
@@ -2100,6 +2001,7 @@
       bgShaderState.uBass = gl.getUniformLocation(prog, 'iBass');
       bgShaderState.uBassTime = gl.getUniformLocation(prog, 'iBassTime');
       bgShaderState.uHigh = gl.getUniformLocation(prog, 'iHigh');
+      bgShaderState.uTint = gl.getUniformLocation(prog, 'iTint');
       bgShaderState.uParams = [];
       for (var pi = 0; pi < 4; pi++) {
         bgShaderState.uParams.push(gl.getUniformLocation(prog, 'iP' + pi));
@@ -2156,6 +2058,8 @@
       gl.uniform1f(st.uBass, scaledBass);
       gl.uniform1f(st.uBassTime, audioReactivity.bassTime ? scaledBass : 0);
       gl.uniform1f(st.uHigh, (highLevel || 0) * audioReactivity.highs);
+      var tint = getTintForStyle();
+      if (st.uTint) gl.uniform3f(st.uTint, tint[0], tint[1], tint[2]);
       var shader = bgShaders[st.active];
       for (var pi = 0; pi < st.uParams.length; pi++) {
         if (st.uParams[pi] !== null) gl.uniform1f(st.uParams[pi], st.paramValues[pi] || 0);
@@ -2199,6 +2103,13 @@
       const PEAK_GRAVITY = 0.0012;
       let peakHold = null;
       var lastFrameTime = Date.now();
+
+      // Terrain persistent state
+      var terrainGrid = null;
+      var terrainScrollAccum = 0;
+
+      // Starfield persistent state
+      var stars = null;
 
       function getBarColor(val, index, total, edgeFadeOverride) {
         var cm = visualizerFx.colorMode;
@@ -2511,19 +2422,15 @@
         var offsetX = (w - gridW) / 2;
         var offsetY = (h - gridH) / 2;
 
-        // Mirror spectrum: bin mapping goes low→high for left half, high→low for right half
-        // This puts bass in the center and highs on the edges (80s stereo EQ style)
-        var halfCols = Math.floor(cols / 2);
-        var binsPerCol = Math.floor(half / halfCols);
+        // Straight EQ: each column = its own frequency band, bass → mids → treble
         var colValues = new Float32Array(cols);
-        for (var c = 0; c < halfCols; c++) {
+        for (var c = 0; c < cols; c++) {
           var sum = 0;
-          var startBin = c * binsPerCol;
-          for (var b = 0; b < binsPerCol; b++) sum += data[startBin + b];
-          var avg = sum / (binsPerCol * 255);
-          // Mirror: edges = high freq, center = low freq
-          colValues[halfCols - 1 - c] = avg;  // left side (right-to-center)
-          colValues[halfCols + c] = avg;        // right side (center-to-right)
+          var startBin = Math.floor(c * half / cols);
+          var endBin = Math.floor((c + 1) * half / cols);
+          if (endBin <= startBin) endBin = startBin + 1;
+          for (var b = startBin; b < endBin && b < half; b++) sum += data[b];
+          colValues[c] = sum / ((endBin - startBin) * 255);
         }
 
         ctx.save();
@@ -2554,6 +2461,225 @@
             ctx.roundRect(x, y, cellW, cellH, radius);
             ctx.fill();
           }
+        }
+
+        ctx.restore();
+      }
+
+      function drawTerrain(data, w, h) {
+        var tp = visualizerFx.params.terrain;
+        var cols = tp.cols;
+        var rows = tp.rows;
+        var dt = Math.min((Date.now() - lastFrameTime) / 1000, 0.05) || 0.016;
+
+        // Init grid
+        if (!terrainGrid || terrainGrid.length !== cols * rows) {
+          terrainGrid = new Float32Array(cols * rows);
+        }
+
+        // Scroll accumulator
+        terrainScrollAccum += tp.scrollSpeed * dt;
+        while (terrainScrollAccum >= 1) {
+          terrainScrollAccum -= 1;
+          // Shift rows forward (last row = closest to viewer)
+          for (var r = rows - 1; r > 0; r--) {
+            for (var c = 0; c < cols; c++) {
+              terrainGrid[r * cols + c] = terrainGrid[(r - 1) * cols + c];
+            }
+          }
+          // New back row from frequency data
+          for (var c = 0; c < cols; c++) {
+            var dataIdx = Math.floor((c / cols) * (data.length * 0.7));
+            var val = data[dataIdx] / 255;
+            terrainGrid[c] = val;
+          }
+        }
+
+        // Smooth grid
+        var sm = tp.smoothing;
+        for (var r = 0; r < rows; r++) {
+          for (var c = 1; c < cols - 1; c++) {
+            var idx = r * cols + c;
+            terrainGrid[idx] = terrainGrid[idx] * (1 - sm) + (terrainGrid[idx - 1] + terrainGrid[idx + 1]) * sm * 0.5;
+          }
+        }
+
+        ctx.save();
+        ctx.lineWidth = tp.lineWidth;
+
+        var cx = w / 2;
+        var vanishY = h * 0.18;  // higher vanishing point
+        var baseY = h * 1.15;    // rows extend past bottom edge toward viewer
+
+        // Pre-compute row geometry (used by both horizontal and depth lines)
+        var rowGeo = new Array(rows);
+        for (var r = 0; r < rows; r++) {
+          var t = r / (rows - 1); // 0 = back, 1 = front
+          // Exponential depth curve — front rows rush toward camera
+          var rowDepth = t * t;
+          var perspScale = tp.perspective + (1 - tp.perspective) * rowDepth;
+          var rowY = vanishY + (baseY - vanishY) * rowDepth;
+          var rowWidth = w * 1.8 * perspScale; // near full-screen width
+          var fogAlpha = Math.pow(t, tp.fog);
+          rowGeo[r] = { rowDepth: rowDepth, perspScale: perspScale, rowY: rowY, rowWidth: rowWidth, fogAlpha: fogAlpha };
+        }
+
+        // Draw horizontal scanlines
+        for (var r = 0; r < rows; r++) {
+          var g = rowGeo[r];
+          ctx.beginPath();
+          for (var c = 0; c < cols; c++) {
+            var colFrac = c / (cols - 1) - 0.5;
+            var x = cx + colFrac * g.rowWidth;
+            var heightVal = terrainGrid[r * cols + c] * tp.heightScale * h * g.perspScale * visualizerFx.intensity;
+            var y = g.rowY - heightVal;
+            if (c === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          var strokeVal = terrainGrid[r * cols + Math.floor(cols / 2)];
+          var strokeColor = getStrokeColor(strokeVal);
+          ctx.globalAlpha = g.fogAlpha * 0.9;
+          ctx.strokeStyle = strokeColor;
+          ctx.shadowColor = strokeColor;
+          ctx.shadowBlur = 6 * visualizerFx.glowMultiplier * g.fogAlpha;
+          ctx.stroke();
+        }
+
+        // Draw depth lines (grid cross-lines)
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 0.15;
+        var step = Math.max(1, Math.floor(cols / 12));
+        for (var c = 0; c < cols; c += step) {
+          ctx.beginPath();
+          for (var r = 0; r < rows; r++) {
+            var g = rowGeo[r];
+            var colFrac = c / (cols - 1) - 0.5;
+            var x = cx + colFrac * g.rowWidth;
+            var heightVal = terrainGrid[r * cols + c] * tp.heightScale * h * g.perspScale * visualizerFx.intensity;
+            var y = g.rowY - heightVal;
+            if (r === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = getStrokeColor(0.3);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      function drawStarfield(data, w, h) {
+        var sp = visualizerFx.params.starfield;
+        var count = sp.starCount;
+
+        // Compute bass and treble from data
+        var bassSum = 0;
+        for (var bi = 0; bi < 6 && bi < data.length; bi++) bassSum += data[bi];
+        var bassLevel = bassSum / (6 * 255);
+
+        var trebleSum = 0;
+        var trebleStart = Math.floor(data.length * 0.6);
+        for (var ti = trebleStart; ti < data.length; ti++) trebleSum += data[ti];
+        var trebleLevel = trebleSum / ((data.length - trebleStart) * 255);
+
+        // Init stars — flat arrays for cache-friendly access
+        if (!stars || stars._count !== count) {
+          stars = {
+            x: new Float32Array(count),
+            y: new Float32Array(count),
+            z: new Float32Array(count),
+            prevSx: new Float32Array(count),
+            prevSy: new Float32Array(count),
+            hasPrev: new Uint8Array(count),
+            _count: count
+          };
+          for (var i = 0; i < count; i++) {
+            stars.x[i] = (Math.random() - 0.5) * 2;
+            stars.y[i] = (Math.random() - 0.5) * 2;
+            stars.z[i] = Math.random();
+          }
+        }
+
+        var speed = (sp.baseSpeed + bassLevel * sp.speedReact) * visualizerFx.intensity;
+        var dt = Math.min((Date.now() - lastFrameTime) / 1000, 0.05) || 0.016;
+        var cx = w / 2;
+        var cy = h / 2;
+        var focalLen = sp.focalLen * Math.min(w, h);
+        var doSparkle = trebleLevel > 0.3;
+        var sparkleChance = sp.sparkle * trebleLevel;
+        var trailLen = sp.trailLength;
+        var starSz = sp.starSize;
+        var sx, sy, sz, size, brightness, sparkleSize, bc;
+
+        ctx.save();
+        ctx.shadowBlur = 0; // no per-star shadowBlur — huge perf win
+
+        // Pass 1: draw trails (batched by line width isn't practical, but
+        // we can at least avoid shadowBlur and minimize state changes)
+        if (trailLen > 0) {
+          for (var i = 0; i < count; i++) {
+            sz = stars.z[i] - speed * dt;
+            if (sz <= 0.01) { sz = 1; stars.hasPrev[i] = 0; stars.x[i] = (Math.random() - 0.5) * 2; stars.y[i] = (Math.random() - 0.5) * 2; }
+            stars.z[i] = sz;
+
+            sx = cx + (stars.x[i] / sz) * focalLen;
+            sy = cy + (stars.y[i] / sz) * focalLen;
+
+            if (sx < -50 || sx > w + 50 || sy < -50 || sy > h + 50) {
+              stars.x[i] = (Math.random() - 0.5) * 2; stars.y[i] = (Math.random() - 0.5) * 2;
+              stars.z[i] = 1; stars.hasPrev[i] = 0; continue;
+            }
+
+            if (stars.hasPrev[i]) {
+              brightness = 1 - sz;
+              size = starSz * brightness * 2;
+              bc = getBarColor(brightness, i, count, 1.0);
+              ctx.beginPath();
+              ctx.moveTo(stars.prevSx[i], stars.prevSy[i]);
+              ctx.lineTo(sx, sy);
+              ctx.strokeStyle = bc.color;
+              ctx.lineWidth = size * 0.5;
+              ctx.globalAlpha = brightness * trailLen;
+              ctx.stroke();
+            }
+
+            stars.prevSx[i] = sx;
+            stars.prevSy[i] = sy;
+            stars.hasPrev[i] = 1;
+          }
+        } else {
+          // Still need to update positions even without trails
+          for (var i = 0; i < count; i++) {
+            sz = stars.z[i] - speed * dt;
+            if (sz <= 0.01 || cx + (stars.x[i] / sz) * focalLen < -50 || cx + (stars.x[i] / sz) * focalLen > w + 50) {
+              stars.x[i] = (Math.random() - 0.5) * 2; stars.y[i] = (Math.random() - 0.5) * 2; sz = 1; stars.hasPrev[i] = 0;
+            }
+            stars.z[i] = sz;
+            stars.prevSx[i] = cx + (stars.x[i] / sz) * focalLen;
+            stars.prevSy[i] = cy + (stars.y[i] / sz) * focalLen;
+            stars.hasPrev[i] = 1;
+          }
+        }
+
+        // Pass 2: draw stars as filled rects (much faster than arc)
+        for (var i = 0; i < count; i++) {
+          sz = stars.z[i];
+          if (sz >= 1) continue;
+          sx = stars.prevSx[i];
+          sy = stars.prevSy[i];
+          brightness = 1 - sz;
+          size = starSz * brightness * 2;
+
+          // Sparkle on treble
+          sparkleSize = size;
+          if (doSparkle && Math.random() < sparkleChance) {
+            sparkleSize = size * (1.5 + Math.random() * 2);
+          }
+
+          bc = getBarColor(brightness, i, count, 1.0);
+          ctx.globalAlpha = brightness;
+          ctx.fillStyle = bc.color;
+          var half = Math.max(0.5, sparkleSize);
+          ctx.fillRect(sx - half, sy - half, half * 2, half * 2);
         }
 
         ctx.restore();
@@ -2631,6 +2757,8 @@
         if (mode === 'scope') drawScope(w, h);
         else if (mode === 'circle') drawCircle(data, w, h);
         else if (mode === 'blocks') drawBlocks(data, w, h);
+        else if (mode === 'terrain') drawTerrain(data, w, h);
+        else if (mode === 'starfield') drawStarfield(data, w, h);
         else drawBars(data, w, h);
 
         // Glow line at base
@@ -3072,7 +3200,7 @@
 
       function reset() {
         applyStyle();
-        visualizerFx.mode = 'bars';
+        visualizerFx.mode = 'scope';
         overlayEffects.length = 0;
       }
 
@@ -3122,6 +3250,12 @@
         },
         blocks: function() {
           visualizerFx.mode = 'blocks';
+        },
+        terrain: function() {
+          visualizerFx.mode = 'terrain';
+        },
+        starfield: function() {
+          visualizerFx.mode = 'starfield';
         },
         discoball: function() {
           createDiscoBall();
@@ -3198,7 +3332,7 @@
 
       function updateHighlight() {
         var btns = menu.querySelectorAll('button[data-fx]');
-        var modes = { bars: 1, scope: 1, circle: 1, blocks: 1 };
+        var modes = { bars: 1, scope: 1, circle: 1, blocks: 1, terrain: 1, starfield: 1 };
         var overlayIds = {};
         for (var oi = 0; oi < overlayEffects.length; oi++) overlayIds[overlayEffects[oi].id] = 1;
         var activeStyle = getActiveStyle();
@@ -3218,7 +3352,9 @@
         bars:   { gap: [0, 6, 0.5], height: [0.3, 1.0, 0.01], peakHold: [0, 60, 1], peakGravity: [0.0002, 0.005, 0.0001], shadowBlur: [0, 40, 1], peakHeight: [1, 6, 0.5], minWidth: [1, 8, 0.5] },
         scope:  { lineWidth: [0.5, 8, 0.5], amplitude: [0.2, 2.0, 0.1], shadowBlur: [0, 40, 1] },
         circle: { innerRadius: [0.05, 0.35, 0.01], spikeLength: [0.1, 0.5, 0.01], shadowBlur: [0, 40, 1], minLineW: [0.5, 4, 0.25], peakDot: [0.2, 1.5, 0.1] },
-        blocks: { cols: [4, 32, 1], rows: [4, 24, 1], gapX: [0, 8, 1], gapY: [0, 8, 1], emptyAlpha: [0, 0.15, 0.005], maxHeight: [1, 24, 1] }
+        blocks: { cols: [4, 32, 1], rows: [4, 24, 1], gapX: [0, 8, 1], gapY: [0, 8, 1], emptyAlpha: [0, 0.15, 0.005], maxHeight: [1, 24, 1] },
+        terrain: { cols: [12, 192, 4], rows: [8, 64, 4], heightScale: [0.1, 0.8, 0.05], scrollSpeed: [0.5, 10, 0.5], perspective: [0.1, 0.8, 0.05], lineWidth: [0.5, 4, 0.5], fog: [0.1, 1.5, 0.1], smoothing: [0, 0.8, 0.05] },
+        starfield: { starCount: [50, 500, 10], baseSpeed: [0.1, 2.0, 0.1], speedReact: [0, 2.0, 0.1], trailLength: [0, 0.5, 0.05], starSize: [0.5, 6, 0.5], focalLen: [0.2, 1.5, 0.1], sparkle: [0, 1.0, 0.1], shadowBlur: [0, 30, 1] }
       };
 
       function updateDevParams() {

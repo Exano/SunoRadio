@@ -67,21 +67,21 @@ test.describe("Visualizer Styles", () => {
     await expect(vaporwave).not.toHaveClass(/active-fx/);
   });
 
-  test("reset returns to vaporwave + bars", async ({ page }) => {
-    // Switch to disco and scope
+  test("reset returns to vaporwave + scope", async ({ page }) => {
+    // Switch to disco and blocks
     await page.locator('button[data-fx="disco"]').click();
-    await page.locator('button[data-fx="scope"]').click();
+    await page.locator('button[data-fx="blocks"]').click();
 
     await expect(page.locator('button[data-fx="disco"]')).toHaveClass(/active-fx/);
-    await expect(page.locator('button[data-fx="scope"]')).toHaveClass(/active-fx/);
+    await expect(page.locator('button[data-fx="blocks"]')).toHaveClass(/active-fx/);
 
     // Hit reset
     await page.locator('button[data-fx="reset"]').click();
 
     await expect(page.locator('button[data-fx="vaporwave"]')).toHaveClass(/active-fx/);
-    await expect(page.locator('button[data-fx="bars"]')).toHaveClass(/active-fx/);
+    await expect(page.locator('button[data-fx="scope"]')).toHaveClass(/active-fx/);
     await expect(page.locator('button[data-fx="disco"]')).not.toHaveClass(/active-fx/);
-    await expect(page.locator('button[data-fx="scope"]')).not.toHaveClass(/active-fx/);
+    await expect(page.locator('button[data-fx="blocks"]')).not.toHaveClass(/active-fx/);
   });
 
   test("switching styles does not affect visualizer mode", async ({ page }) => {
