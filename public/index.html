@@ -770,7 +770,7 @@
       <button data-fx="circle">Circle</button>
       <button data-fx="blocks">Blocks</button>
     </div>
-    <div class="dev-menu-section">Visualizer (30s)</div>
+    <div class="dev-menu-section">Style</div>
     <div class="dev-menu-row">
       <button data-fx="disco">Disco</button>
       <button data-fx="matrix">Matrix</button>
@@ -888,18 +888,18 @@
 
     // ---- Visualizer Effects State ----
     var visualizerFx = {
-      colorMode: 'default',   // 'default','disco','matrix','vaporwave','chill'
+      colorMode: 'vaporwave', // 'default','disco','matrix','vaporwave','chill'
       intensity: 1.0,         // bar height multiplier
       glowMultiplier: 1.0,    // shadowBlur multiplier
       rain: false,            // flip bar direction (top-down)
       hueOffset: 0,           // for disco rotation (incremented per frame)
       timer: null,            // setTimeout id for auto-expire
-      mode: 'scope',          // 'bars' | 'scope' | 'circle' | 'blocks'
+      mode: 'bars',           // 'bars' | 'scope' | 'circle' | 'blocks'
       params: {
-        bars:   { gap: 1.5, height: 0.92, peakHold: 18, peakGravity: 0.0012, shadowBlur: 12, peakHeight: 2, minWidth: 2 },
+        bars:   { gap: 1.5, height: 0.38, peakHold: 2, peakGravity: 0.0027, shadowBlur: 28, peakHeight: 2, minWidth: 1.5 },
         scope:  { lineWidth: 1.0, amplitude: 0.3, shadowBlur: 10 },
-        circle: { innerRadius: 0.15, spikeLength: 0.3, shadowBlur: 10, minLineW: 1.5, peakDot: 0.6 },
-        blocks: { cols: 16, rows: 12, gapX: 2, gapY: 2, emptyAlpha: 0.03 }
+        circle: { innerRadius: 0.2, spikeLength: 0.25, shadowBlur: 15, minLineW: 3, peakDot: 0.6 },
+        blocks: { cols: 16, rows: 12, gapX: 2, gapY: 2, emptyAlpha: 0.03, maxHeight: 12 }
       }
     };
 
@@ -1216,12 +1216,18 @@
     function ensureAudio() {
       if (!audioCtx) initAudioEngine();
       var wasSuspended = audioCtx.state === "suspended";
-      if (wasSuspended) audioCtx.resume();
+      if (wasSuspended) {
+        audioCtx.resume().then(function() {
+          // AudioContext is now truly running — retry channels and update display
+          updateChannels();
+          updateDisplayIfNeeded();
+        });
+      }
       if (!started) {
         started = true;
         updateChannels();
       } else if (wasSuspended) {
-        // AudioContext just resumed after autoplay block — retry playing
+        // Kick immediately too in case resume() resolves synchronously
         updateChannels();
       }
     }
@@ -1408,14 +1414,18 @@
         // Show buffering indicator while audio is loading, hide once playing
         const overlay = document.getElementById("overlay");
         const isPlaying = ch && ch.audio && !ch.audio.paused;
-        if (isPlaying) {
+        const hasAudio = ch && ch.audio && ch.audio.currentTime > 0;
+        if (isPlaying || hasAudio) {
           overlay.style.display = "none";
-        } else if (!overlay.querySelector('.tuning-spinner')) {
-          overlay.style.display = "flex";
-          overlay.innerHTML = `
-            <div class="tuning-spinner"></div>
-            <div class="tuning-text" style="margin-top:10px">Tuning in\u2026</div>
-          `;
+        } else if (song) {
+          // We have song data but audio hasn't started — show tuning indicator
+          if (!overlay.querySelector('.tuning-spinner')) {
+            overlay.style.display = "flex";
+            overlay.innerHTML = `
+              <div class="tuning-spinner"></div>
+              <div class="tuning-text" style="margin-top:10px">Tuning in\u2026</div>
+            `;
+          }
         }
 
         // Start visualizer
@@ -2336,84 +2346,153 @@
         ctx.restore();
       }
 
+      // Smoothed radii for the blob — persisted across frames for interpolation
+      var blobSmoothed = null;
+
       function drawCircle(data, w, h) {
         var half = Math.floor(data.length / 2);
         var cx = w / 2, cy = h / 2;
         var minDim = Math.min(w, h);
         var cp = visualizerFx.params.circle;
-        var innerR = minDim * cp.innerRadius;
-        var maxLen = minDim * cp.spikeLength;
+        var baseR = minDim * cp.innerRadius;
+        var maxSpike = minDim * cp.spikeLength;
+        var intensity = visualizerFx.intensity;
 
-        if (!peaks || peaks.length !== half) {
-          peaks = new Float32Array(half);
-          peakVel = new Float32Array(half);
-          peakHold = new Uint16Array(half);
+        // Downsample to smooth point count
+        var pts = 64;
+        var binSize = half / pts;
+
+        if (!blobSmoothed || blobSmoothed.length !== pts) {
+          blobSmoothed = new Float32Array(pts);
         }
 
-        // 4-way symmetry: half bins × 4 quadrants = full circle
-        var totalBars = half * 4;
-        var lineW = Math.max(cp.minLineW, (2 * Math.PI * innerR) / totalBars - 0.5);
+        // Build radii from frequency data with smoothing
+        var radii = new Float32Array(pts);
+        for (var i = 0; i < pts; i++) {
+          var sum = 0;
+          var s = Math.floor(i * binSize);
+          var e = Math.floor((i + 1) * binSize);
+          for (var b = s; b < e; b++) sum += data[b];
+          var val = (sum / (e - s)) / 255;
+          var target = baseR + val * maxSpike * intensity;
+          // Smooth towards target for organic feel
+          blobSmoothed[i] += (target - blobSmoothed[i]) * 0.25;
+          radii[i] = blobSmoothed[i];
+        }
+
+        // Mirror: build full 360° from the pts (4-way symmetry)
+        var fullPts = pts * 4;
+        var fullRadii = new Float32Array(fullPts);
+        for (var i = 0; i < pts; i++) {
+          fullRadii[i] = radii[i];                     // top-right
+          fullRadii[pts * 2 - 1 - i] = radii[i];       // top-left
+          fullRadii[pts * 2 + i] = radii[i];            // bottom-left
+          fullRadii[pts * 4 - 1 - i] = radii[i];       // bottom-right
+        }
+
+        // Convert to x,y points
+        var points = [];
+        for (var i = 0; i < fullPts; i++) {
+          var ang = (i / fullPts) * Math.PI * 2 - Math.PI / 2;
+          points.push({
+            x: cx + Math.cos(ang) * fullRadii[i],
+            y: cy + Math.sin(ang) * fullRadii[i]
+          });
+        }
 
         ctx.save();
-        ctx.shadowBlur = cp.shadowBlur * visualizerFx.glowMultiplier;
-        ctx.lineWidth = lineW;
 
-        var halfPi = Math.PI / 2;
-
-        for (var i = 0; i < half; i++) {
-          var val = data[i] / 255;
-          var barLen = val * maxLen * visualizerFx.intensity;
-          var bc = getBarColor(val, i, half, 1.0);
-
-          // 4 quadrant angles: bass at top AND bottom, spreading 90° each way
-          var frac = i / half;
-          var angles = [
-            -halfPi + frac * halfPi,   // top → right
-            -halfPi - frac * halfPi,   // top → left
-             halfPi - frac * halfPi,   // bottom → right
-             halfPi + frac * halfPi    // bottom → left
-          ];
-
-          ctx.strokeStyle = bc.color;
-          ctx.shadowColor = bc.glowColor;
-
-          for (var a = 0; a < 4; a++) {
-            var ang = angles[a];
-            var x1 = cx + Math.cos(ang) * innerR;
-            var y1 = cy + Math.sin(ang) * innerR;
-            var x2 = cx + Math.cos(ang) * (innerR + barLen);
-            var y2 = cy + Math.sin(ang) * (innerR + barLen);
-            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-          }
-
-          // Peak hold
-          if (val >= peaks[i]) {
-            peaks[i] = val;
-            peakVel[i] = 0;
-            peakHold[i] = PEAK_HOLD;
-          } else {
-            if (peakHold[i] > 0) peakHold[i]--;
-            else {
-              peakVel[i] += PEAK_GRAVITY;
-              peaks[i] -= peakVel[i];
-              if (peaks[i] < 0) peaks[i] = 0;
-            }
-          }
-
-          // Peak dots on all 4 sides
-          var peakDist = innerR + peaks[i] * maxLen * visualizerFx.intensity;
-          var peakAlpha = 0.5 + peaks[i] * 0.5;
-          ctx.fillStyle = bc.peakColor + peakAlpha + ')';
-          ctx.shadowColor = 'transparent';
-
-          for (var a = 0; a < 4; a++) {
-            var px = cx + Math.cos(angles[a]) * peakDist;
-            var py = cy + Math.sin(angles[a]) * peakDist;
-            ctx.beginPath(); ctx.arc(px, py, lineW * cp.peakDot, 0, Math.PI * 2); ctx.fill();
-          }
+        // --- Layer 1: outer glow blob ---
+        ctx.shadowBlur = cp.shadowBlur * visualizerFx.glowMultiplier * 2;
+        ctx.shadowColor = getStrokeColor(0.6);
+        drawSmoothBlob(points, fullPts);
+        var grad = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, baseR + maxSpike * intensity);
+        var cm = visualizerFx.colorMode;
+        if (cm === 'vaporwave') {
+          grad.addColorStop(0, 'rgba(255, 150, 255, 0.9)');
+          grad.addColorStop(0.5, 'rgba(180, 80, 255, 0.6)');
+          grad.addColorStop(1, 'rgba(80, 200, 255, 0.3)');
+        } else if (cm === 'matrix') {
+          grad.addColorStop(0, 'rgba(0, 255, 80, 0.9)');
+          grad.addColorStop(0.5, 'rgba(0, 200, 60, 0.6)');
+          grad.addColorStop(1, 'rgba(0, 120, 40, 0.3)');
+        } else if (cm === 'disco') {
+          var hue = visualizerFx.hueOffset;
+          grad.addColorStop(0, 'hsla(' + hue + ', 85%, 65%, 0.9)');
+          grad.addColorStop(0.5, 'hsla(' + ((hue + 60) % 360) + ', 80%, 55%, 0.6)');
+          grad.addColorStop(1, 'hsla(' + ((hue + 120) % 360) + ', 75%, 50%, 0.3)');
+        } else if (cm === 'chill') {
+          grad.addColorStop(0, 'rgba(150, 200, 255, 0.9)');
+          grad.addColorStop(0.5, 'rgba(80, 140, 255, 0.6)');
+          grad.addColorStop(1, 'rgba(40, 80, 200, 0.3)');
+        } else {
+          grad.addColorStop(0, 'rgba(255, 150, 50, 0.9)');
+          grad.addColorStop(0.5, 'rgba(255, 79, 0, 0.6)');
+          grad.addColorStop(1, 'rgba(200, 40, 0, 0.3)');
         }
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // --- Layer 2: bright inner blob (smaller, more opaque) ---
+        ctx.shadowBlur = 0;
+        var innerPoints = [];
+        for (var i = 0; i < fullPts; i++) {
+          var ang = (i / fullPts) * Math.PI * 2 - Math.PI / 2;
+          var r = baseR + (fullRadii[i] - baseR) * 0.5;
+          innerPoints.push({
+            x: cx + Math.cos(ang) * r,
+            y: cy + Math.sin(ang) * r
+          });
+        }
+        drawSmoothBlob(innerPoints, fullPts);
+        var grad2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR + maxSpike * 0.5);
+        if (cm === 'vaporwave') {
+          grad2.addColorStop(0, 'rgba(255, 220, 255, 0.95)');
+          grad2.addColorStop(1, 'rgba(220, 120, 255, 0.15)');
+        } else if (cm === 'matrix') {
+          grad2.addColorStop(0, 'rgba(200, 255, 200, 0.95)');
+          grad2.addColorStop(1, 'rgba(0, 255, 80, 0.15)');
+        } else if (cm === 'disco') {
+          grad2.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+          grad2.addColorStop(1, 'hsla(' + visualizerFx.hueOffset + ', 80%, 60%, 0.15)');
+        } else if (cm === 'chill') {
+          grad2.addColorStop(0, 'rgba(220, 240, 255, 0.95)');
+          grad2.addColorStop(1, 'rgba(100, 160, 255, 0.15)');
+        } else {
+          grad2.addColorStop(0, 'rgba(255, 230, 180, 0.95)');
+          grad2.addColorStop(1, 'rgba(255, 100, 0, 0.15)');
+        }
+        ctx.fillStyle = grad2;
+        ctx.fill();
+
+        // --- Layer 3: edge stroke for definition ---
+        drawSmoothBlob(points, fullPts);
+        ctx.strokeStyle = getStrokeColor(0.8);
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.4;
+        ctx.stroke();
 
         ctx.restore();
+      }
+
+      function drawSmoothBlob(points, n) {
+        ctx.beginPath();
+        // Catmull-Rom to bezier for smooth closed curve
+        for (var i = 0; i < n; i++) {
+          var p0 = points[(i - 1 + n) % n];
+          var p1 = points[i];
+          var p2 = points[(i + 1) % n];
+          var p3 = points[(i + 2) % n];
+
+          var cp1x = p1.x + (p2.x - p0.x) / 6;
+          var cp1y = p1.y + (p2.y - p0.y) / 6;
+          var cp2x = p2.x - (p3.x - p1.x) / 6;
+          var cp2y = p2.y - (p3.y - p1.y) / 6;
+
+          if (i === 0) ctx.moveTo(p1.x, p1.y);
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
+        ctx.closePath();
       }
 
       function drawBlocks(data, w, h) {
@@ -2422,29 +2501,61 @@
         var gapX = blkp.gapX, gapY = blkp.gapY;
         var cellW = (w - (cols + 1) * gapX) / cols;
         var cellH = (h - (rows + 1) * gapY) / rows;
-        var binsPerCol = Math.floor(data.length / 2 / cols);
+        var radius = Math.min(cellW, cellH) * 0.2;
+        var half = Math.floor(data.length / 2);
+        var maxH = blkp.maxHeight > 0 ? Math.min(blkp.maxHeight, rows) : rows;
 
-        ctx.save();
-        for (var col = 0; col < cols; col++) {
+        // Center the grid
+        var gridW = cols * cellW + (cols - 1) * gapX;
+        var gridH = rows * cellH + (rows - 1) * gapY;
+        var offsetX = (w - gridW) / 2;
+        var offsetY = (h - gridH) / 2;
+
+        // Mirror spectrum: bin mapping goes low→high for left half, high→low for right half
+        // This puts bass in the center and highs on the edges (80s stereo EQ style)
+        var halfCols = Math.floor(cols / 2);
+        var binsPerCol = Math.floor(half / halfCols);
+        var colValues = new Float32Array(cols);
+        for (var c = 0; c < halfCols; c++) {
           var sum = 0;
-          var startBin = col * binsPerCol;
+          var startBin = c * binsPerCol;
           for (var b = 0; b < binsPerCol; b++) sum += data[startBin + b];
           var avg = sum / (binsPerCol * 255);
-          var filledRows = Math.round(avg * rows * visualizerFx.intensity);
+          // Mirror: edges = high freq, center = low freq
+          colValues[halfCols - 1 - c] = avg;  // left side (right-to-center)
+          colValues[halfCols + c] = avg;        // right side (center-to-right)
+        }
 
+        ctx.save();
+
+        // Draw empty grid (single pass, centered)
+        ctx.fillStyle = 'rgba(255,255,255,' + blkp.emptyAlpha + ')';
+        for (var col = 0; col < cols; col++) {
           for (var row = 0; row < rows; row++) {
-            var x = gapX + col * (cellW + gapX);
-            var y = gapY + (rows - 1 - row) * (cellH + gapY);
-
-            if (row < filledRows) {
-              var bc = getBarColor(avg, col, cols);
-              ctx.fillStyle = bc.color;
-            } else {
-              ctx.fillStyle = 'rgba(255,255,255,' + blkp.emptyAlpha + ')';
-            }
-            ctx.fillRect(x, y, cellW, cellH);
+            var x = offsetX + col * (cellW + gapX);
+            var y = offsetY + (rows - 1 - row) * (cellH + gapY);
+            ctx.beginPath();
+            ctx.roundRect(x, y, cellW, cellH, radius);
+            ctx.fill();
           }
         }
+
+        // Draw filled blocks with color scaled to maxHeight
+        for (var col = 0; col < cols; col++) {
+          var filledRows = Math.round(colValues[col] * maxH * visualizerFx.intensity);
+
+          for (var row = 0; row < filledRows; row++) {
+            var x = offsetX + col * (cellW + gapX);
+            var y = offsetY + (rows - 1 - row) * (cellH + gapY);
+            var rowVal = (row + 1) / maxH;
+            var bc = getBarColor(rowVal, col, cols, 1.0);
+            ctx.fillStyle = bc.color;
+            ctx.beginPath();
+            ctx.roundRect(x, y, cellW, cellH, radius);
+            ctx.fill();
+          }
+        }
+
         ctx.restore();
       }
 
@@ -2922,6 +3033,9 @@
       // First user gesture unblocks autoplay — listen for any interaction
       function onFirstInteraction() {
         ensureAudio();
+        // Update display shortly after to clear loading/tuning overlay
+        setTimeout(updateDisplayIfNeeded, 300);
+        setTimeout(updateDisplayIfNeeded, 1000);
         document.removeEventListener("click", onFirstInteraction);
         document.removeEventListener("touchstart", onFirstInteraction);
         document.removeEventListener("keydown", onFirstInteraction);
@@ -2941,62 +3055,56 @@
 
     // ---- Chat-Triggered Visualizer Effects ----
     var chatEffects = (function() {
-      var EFFECT_DURATION = 30000; // 30 seconds
 
-      function resetColors() {
-        if (visualizerFx.timer) {
-          clearTimeout(visualizerFx.timer);
-        }
-        visualizerFx.colorMode = 'default';
+      function applyStyle(fn) {
+        // Reset all style properties to defaults, then apply the new style
+        visualizerFx.colorMode = 'vaporwave';
         visualizerFx.intensity = 1.0;
         visualizerFx.glowMultiplier = 1.0;
         visualizerFx.rain = false;
         visualizerFx.hueOffset = 0;
-        visualizerFx.timer = null;
+        if (visualizerFx.timer) {
+          clearTimeout(visualizerFx.timer);
+          visualizerFx.timer = null;
+        }
+        if (fn) fn();
       }
 
       function reset() {
-        resetColors();
+        applyStyle();
         visualizerFx.mode = 'bars';
         overlayEffects.length = 0;
       }
 
-      function applyTimedEffect(fn) {
-        resetColors();
-        fn();
-        visualizerFx.timer = setTimeout(resetColors, EFFECT_DURATION);
-      }
-
       var effects = {
         disco: function() {
-          applyTimedEffect(function() {
+          applyStyle(function() {
             visualizerFx.colorMode = 'disco';
           });
         },
         matrix: function() {
-          applyTimedEffect(function() {
+          applyStyle(function() {
             visualizerFx.colorMode = 'matrix';
           });
         },
         vaporwave: function() {
-          applyTimedEffect(function() {
-            visualizerFx.colorMode = 'vaporwave';
-          });
+          applyStyle(); // vaporwave is the default
         },
         party: function() {
-          applyTimedEffect(function() {
+          applyStyle(function() {
+            visualizerFx.colorMode = 'disco';
             visualizerFx.intensity = 1.3;
             visualizerFx.glowMultiplier = 2.0;
           });
         },
         chill: function() {
-          applyTimedEffect(function() {
+          applyStyle(function() {
             visualizerFx.colorMode = 'chill';
             visualizerFx.intensity = 0.7;
           });
         },
         rain: function() {
-          applyTimedEffect(function() {
+          applyStyle(function() {
             visualizerFx.rain = true;
           });
         },
@@ -3077,21 +3185,29 @@
     // ---- Dev Menu ----
     (function() {
       var menu = document.getElementById('dev-menu');
-      var timedFx = ['disco', 'matrix', 'vaporwave', 'party', 'chill', 'rain'];
+      var styleFx = ['disco', 'matrix', 'vaporwave', 'party', 'chill', 'rain'];
+
+      function getActiveStyle() {
+        if (visualizerFx.rain) return 'rain';
+        if (visualizerFx.intensity === 1.3 && visualizerFx.colorMode === 'disco') return 'party';
+        if (visualizerFx.colorMode === 'chill') return 'chill';
+        if (visualizerFx.colorMode === 'disco') return 'disco';
+        if (visualizerFx.colorMode === 'matrix') return 'matrix';
+        return 'vaporwave';
+      }
 
       function updateHighlight() {
         var btns = menu.querySelectorAll('button[data-fx]');
         var modes = { bars: 1, scope: 1, circle: 1, blocks: 1 };
         var overlayIds = {};
         for (var oi = 0; oi < overlayEffects.length; oi++) overlayIds[overlayEffects[oi].id] = 1;
+        var activeStyle = getActiveStyle();
         for (var i = 0; i < btns.length; i++) {
           var fx = btns[i].getAttribute('data-fx');
           var active = false;
-          if (fx === visualizerFx.colorMode && fx !== 'default') active = true;
-          if (fx === 'party' && visualizerFx.intensity === 1.3) active = true;
-          if (fx === 'rain' && visualizerFx.rain) active = true;
-          if (modes[fx] && fx === visualizerFx.mode) active = true;
-          if (overlayIds[fx]) active = true;
+          if (styleFx.indexOf(fx) !== -1) active = (fx === activeStyle);
+          else if (modes[fx]) active = (fx === visualizerFx.mode);
+          else if (overlayIds[fx]) active = true;
           btns[i].classList.toggle('active-fx', active);
         }
       }
@@ -3102,7 +3218,7 @@
         bars:   { gap: [0, 6, 0.5], height: [0.3, 1.0, 0.01], peakHold: [0, 60, 1], peakGravity: [0.0002, 0.005, 0.0001], shadowBlur: [0, 40, 1], peakHeight: [1, 6, 0.5], minWidth: [1, 8, 0.5] },
         scope:  { lineWidth: [0.5, 8, 0.5], amplitude: [0.2, 2.0, 0.1], shadowBlur: [0, 40, 1] },
         circle: { innerRadius: [0.05, 0.35, 0.01], spikeLength: [0.1, 0.5, 0.01], shadowBlur: [0, 40, 1], minLineW: [0.5, 4, 0.25], peakDot: [0.2, 1.5, 0.1] },
-        blocks: { cols: [4, 32, 1], rows: [4, 24, 1], gapX: [0, 8, 1], gapY: [0, 8, 1], emptyAlpha: [0, 0.15, 0.005] }
+        blocks: { cols: [4, 32, 1], rows: [4, 24, 1], gapX: [0, 8, 1], gapY: [0, 8, 1], emptyAlpha: [0, 0.15, 0.005], maxHeight: [1, 24, 1] }
       };
 
       function updateDevParams() {

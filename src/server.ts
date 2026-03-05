@@ -326,7 +326,7 @@ app.use(express.static(join(root, "public")));
 
 const server = createServer(app);
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 1024 });
 
 // --- Binary protocol constants ---
 const MSG_BATCH = 0x01;
@@ -438,7 +438,7 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "hello") {
       user.hue = typeof msg.hue === "number" ? Math.max(0, Math.min(359, Math.round(msg.hue))) : user.hue;
-      user.freq = typeof msg.freq === "number" ? msg.freq : user.freq;
+      user.freq = typeof msg.freq === "number" ? Math.max(0, Math.min(1079, msg.freq)) : user.freq;
 
       // Send binary welcome with all current users
       const others: ConnectedUser[] = [];
@@ -451,7 +451,7 @@ wss.on("connection", (ws) => {
       dirtyUsers.add(id);
     } else if (msg.type === "tune") {
       if (typeof msg.freq === "number") {
-        user.freq = msg.freq;
+        user.freq = Math.max(0, Math.min(1079, msg.freq));
         dirtyUsers.add(id);
       }
     }
