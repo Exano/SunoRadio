@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <link rel="icon" type="image/png" href="/favicon.png">
   <title>SunoTime Radio</title>
+
+  <!-- Open Graph / Link Previews -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="SunoTime Radio">
+  <meta property="og:description" content="FM radio simulator streaming AI-generated music across 27 genre stations with real-time visualizers">
+  <meta property="og:image" content="/preview.png">
+  <meta property="og:url" content="https://sunotime.radio">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SunoTime Radio">
+  <meta name="twitter:description" content="FM radio simulator streaming AI-generated music across 27 genre stations with real-time visualizers">
+  <meta name="twitter:image" content="/preview.png">
+  <script defer src="https://ezanalytics.tonythedev.com/t.js" data-site="9b300702-6759-47bf-908f-a5931b5c40d8"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -255,17 +269,19 @@
       justify-content: center;
       pointer-events: none;
       z-index: 2;
+      background: rgba(0, 0, 0, 0.55);
     }
 
     .tuning-text {
-      color: #555;
-      font-size: 13px;
+      color: #ccc;
+      font-size: 15px;
       letter-spacing: 1px;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
     }
     .tuning-spinner {
-      width: 24px;
-      height: 24px;
-      border: 2px solid #222;
+      width: 28px;
+      height: 28px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
       border-top-color: #ff4f00;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
@@ -1278,6 +1294,9 @@
           const data = stationData[s.freq];
           if (data?.songs?.length > 0) {
             inRange.push({ station: s, dist, data });
+          } else if (!data) {
+            // Station data not yet loaded — fetch on demand
+            lazyFetchStation(s.freq);
           }
         }
       }
@@ -3080,6 +3099,46 @@
       console.log(`Pre-fetched data for ${Object.keys(stationData).length} stations`);
     }
 
+    // Bulk background prefetch: one request for all remaining stations
+    var stationFetchInFlight = new Set();
+
+    async function backgroundPrefetchRemaining() {
+      try {
+        const res = await fetch('/api/all-stations');
+        if (res.ok) {
+          const all = await res.json();
+          for (const freq in all) {
+            if (!stationData[freq]) stationData[freq] = all[freq];
+          }
+          console.log(`Bulk prefetch complete: ${Object.keys(stationData).length} stations loaded`);
+          preloadAlbumArt();
+          return;
+        }
+      } catch (e) {
+        console.warn('Bulk prefetch failed, falling back to individual fetches', e);
+      }
+      // Fallback: individual fetches for any missing stations
+      await prefetchAllStations();
+      preloadAlbumArt();
+    }
+
+    // On-demand fetch for a single station (used when tuning before prefetch finishes)
+    async function lazyFetchStation(freq) {
+      if (stationData[freq] || stationFetchInFlight.has(freq)) return;
+      stationFetchInFlight.add(freq);
+      try {
+        const res = await fetch(`/api/station/${freq}`);
+        if (res.ok) {
+          stationData[freq] = await res.json();
+          updateChannels();
+        }
+      } catch (e) {
+        console.warn(`Lazy fetch failed for ${freq}`, e);
+      } finally {
+        stationFetchInFlight.delete(freq);
+      }
+    }
+
     // ---- Album art preloading ----
     // For every station, compute the UTC-scheduled current song and preload
     // its image plus previous and next songs' images into the browser cache.
@@ -3145,18 +3204,44 @@
       setupTunerInput();
       setupVolumeControls();
 
-      // Pre-fetch all station data, preload art, then auto-tune to a random station
-      await prefetchAllStations();
-      preloadAlbumArt();
-      setInterval(preloadAlbumArt, 30_000);
+      // Fast-start: fetch ONE random station, play immediately, prefetch rest in background
+      const shuffled = [...stations].sort(() => Math.random() - 0.5);
+      let started = false;
+      for (let i = 0; i < Math.min(4, shuffled.length); i++) {
+        try {
+          const r = await fetch(`/api/station/${shuffled[i].freq}`);
+          if (r.ok) {
+            const data = await r.json();
+            if (data?.songs?.length > 0) {
+              stationData[shuffled[i].freq] = data;
+              const freq = parseFloat(shuffled[i].freq);
+              const slider = document.getElementById("tuner-range");
+              slider.value = Math.round(freq * 10);
+              ensureAudio();
+              onFrequencyChange(freq);
+              started = true;
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn(`Fast-start fetch failed for ${shuffled[i].freq}`, e);
+        }
+      }
 
-      // Auto-tune to a random station
-      const randomStation = stations[Math.floor(Math.random() * stations.length)];
-      const freq = parseFloat(randomStation.freq);
-      const slider = document.getElementById("tuner-range");
-      slider.value = Math.round(freq * 10);
-      ensureAudio();
-      onFrequencyChange(freq);
+      // Fallback: if no single station worked, do full prefetch
+      if (!started) {
+        await prefetchAllStations();
+        const randomStation = stations[Math.floor(Math.random() * stations.length)];
+        const freq = parseFloat(randomStation.freq);
+        const slider = document.getElementById("tuner-range");
+        slider.value = Math.round(freq * 10);
+        ensureAudio();
+        onFrequencyChange(freq);
+      }
+
+      // Background prefetch remaining stations (fire-and-forget)
+      backgroundPrefetchRemaining();
+      setInterval(preloadAlbumArt, 30_000);
 
       // First user gesture unblocks autoplay — listen for any interaction
       function onFirstInteraction() {
