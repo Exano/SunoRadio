@@ -120,7 +120,7 @@ async function searchSuno(term: string, retries = 2): Promise<SunoClip[]> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          search_queries: [{ term, search_type: "tag_song", size: 50 }],
+          search_queries: [{ term, search_type: "tag_song", size: 100 }],
         }),
       });
       if (res.status === 429) {
@@ -319,6 +319,28 @@ for (const station of STATIONS) {
     }
   });
 }
+
+app.get("/api/all-stations", async (_req, res) => {
+  try {
+    const result: Record<string, any> = {};
+    await Promise.all(
+      STATIONS.map(async (station) => {
+        const songs = await fetchStationSongs(station);
+        const stationSongs = classifySongs(songs);
+        result[station.freq] = {
+          freq: station.freq,
+          name: station.name,
+          totalSongs: stationSongs.length,
+          songs: stationSongs,
+        };
+      })
+    );
+    res.json(result);
+  } catch (err) {
+    console.error("Error fetching all stations:", err);
+    res.status(502).json({ error: "Failed to fetch stations" });
+  }
+});
 
 app.use(express.static(join(root, "public")));
 
